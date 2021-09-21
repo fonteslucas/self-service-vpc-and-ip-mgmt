@@ -1,0 +1,180 @@
+#Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#
+#Permission is hereby granted, free of charge, to any person obtaining a copy of this
+#software and associated documentation files (the "Software"), to deal in the Software
+#without restriction, including without limitation the rights to use, copy, modify,
+#merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+#permit persons to whom the Software is furnished to do so.
+#
+#THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+#INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+#PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+#HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+#OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+#SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: Creates a Service Catalog portfolio for self-service network products.
+
+Parameters:
+  pPortfolioName:
+    Type: String
+    Default: Self-Service Network Portfolio
+
+  pVpcProductKey:
+    Type: String
+    Description: The full S3 location where the VPC product template is uploaded to.
+    Default: https://marketplace-sa-resources-ct-us-east-1.s3.amazonaws.com/ct-blogs-content/product-vpc.cf.yml
+  
+  pRoleName:
+    Type: String
+    Default: service-catalog-vpc-launch
+
+
+Resources:
+
+  rVpcLaunchRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - servicecatalog.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      RoleName: !Ref pRoleName
+
+
+  rVpcLaunchPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: SC-VPC-Product
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - ec2:AssociateRouteTable
+              - ec2:AuthorizeSecurityGroupEgress
+              - ec2:AuthorizeSecurityGroupIngress
+              - ec2:CreateRoute
+              - ec2:CreateRouteTable
+              - ec2:CreateSecurityGroup
+              - ec2:CreateSubnet
+              - ec2:CreateTags
+              - ec2:CreateTransitGatewayVpcAttachment
+              - ec2:CreateVpc
+              - ec2:DeleteRoute
+              - ec2:DeleteRouteTable
+              - ec2:DeleteSecurityGroup
+              - ec2:DeleteSubnet
+              - ec2:DeleteTransitGatewayVpcAttachment
+              - ec2:DeleteVpc
+              - ec2:Describe*
+              - ec2:DisassociateRouteTable
+              - ec2:ModifyVpcAttribute
+              - ec2:ReplaceRoute
+              - ec2:RevokeSecurityGroupEgress
+              - ec2:RevokeSecurityGroupIngress
+              - cloudformation:CreateStack
+              - cloudformation:DeleteStack
+              - cloudformation:DescribeStackEvents
+              - cloudformation:DescribeStacks
+              - cloudformation:GetTemplateSummary
+              - cloudformation:SetStackPolicy
+              - cloudformation:ValidateTemplate
+              - cloudformation:UpdateStack
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - s3:GetObject
+            Resource: '*'
+            Condition:
+              StringEquals:
+                s3:ExistingObjectTag/servicecatalog:provisioning: true
+
+      Roles:
+        - !Ref rVpcLaunchRole
+
+##### Portfolio Resources #####
+
+  rMasterPortfolio:
+    Type: AWS::ServiceCatalog::Portfolio
+    Properties:
+      AcceptLanguage: en
+      Description: Portfolio for network products
+      DisplayName: !Ref pPortfolioName
+      ProviderName: AWS
+
+##### Product Resources #####
+
+  rVpcProduct:
+    Type: AWS::ServiceCatalog::CloudFormationProduct
+    Properties:
+      AcceptLanguage: en
+      Description: This product builds a standardized VPC.
+      Distributor: AWS
+      Name: VPC
+      Owner: AWS
+      ProvisioningArtifactParameters:
+        - Description: This is version 1.0 of the AWS VPC product.
+          Name: Version - 1.0
+          Info:
+            LoadTemplateFromURL: !Ref pVpcProductKey
+
+##### Product Launch Role Constraints #####
+
+  rVpcProductLaunchRoleConstraint:
+    Type: AWS::ServiceCatalog::LaunchRoleConstraint
+    Properties:
+      AcceptLanguage: en
+      Description: The launch role constraint used to restrict who can launch the VPC product from the portfolio.
+      LocalRoleName: !Ref pRoleName
+      PortfolioId: !Ref rMasterPortfolio
+      ProductId: !Ref rVpcProduct
+
+##### Portfolio / Product Associations ##### 
+  
+  rVpcProductAssociation:
+    Type: AWS::ServiceCatalog::PortfolioProductAssociation
+    Properties:
+      AcceptLanguage: en
+      PortfolioId: !Ref rMasterPortfolio
+      ProductId: !Ref rVpcProduct
+
+
+Outputs:
+  oMasterPortfolioId:
+    Description: The master portfolio ID that was created
+    Value: !Ref rMasterPortfolio
+    Export:
+      Name: MASTER-NTWK-PORTFOLIO-ID
+
+  oVpcProductId:
+    Description: VPC product ID
+    Value: !Ref rVpcProduct
+    Export:
+      Name: VPC-PRODUCT-ID
+
+  oVpcProductName:
+    Description: VPC Product Name
+    Value: !GetAtt rVpcProduct.ProductName
+    Export:
+      Name: VPC-PRODUCT-NAME
+  
+  oVpcLaunchRole:
+    Description: The SC VPC launch role resource name
+    Value: !Ref rVpcLaunchRole
+    Export:
+      Name: VPC-LAUNCH-ROLE
+
+  oVpcLaunchPolicy:
+    Description: The SC VPC launch policy resource name
+    Value: !Ref rVpcLaunchPolicy
+    Export:
+      Name: VPC-LAUNCH-POLICY
