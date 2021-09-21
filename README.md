@@ -1,3 +1,12 @@
+# EDIT
+
+It's a mix of "self-service-vpcs blogs" and "vpc cidr mgmt"
+
+https://aws.amazon.com/pt/blogs/mt/self-service-vpcs-in-aws-control-tower-using-aws-service-catalog/
+
+https://github.com/aws-samples/aws-vpc-cidr-mgmt
+
+
 # Overview
 
 The goal of the solution is to empower developers to request VPC's without needing to engage with the network team. To achieve this IP address management is suggested for two reasons.
@@ -17,9 +26,20 @@ The API is protected by IAM authentication and contains a resource policy that r
      alt="Architecture"
      style="float: left; margin-right: 200px;" />
 
+Also, they create subnets for workloads and transit gateway attachment, and automatically attach in a existing Transit Gateway
+
 # Deployment
 
 The solution can be deployed into any account within your AWS Organization. Typically this would be your central networking account which is managed by your core network engineers.
+
+If you want to test single account, just remove the parameters "
+   OrganizationsId:
+    Type: String
+    Default: o-kfsxtj8fwl
+  RootOrganizationUnitId:
+    Type: String
+    Default: r-4rhz
+" from ip-mgmt.yaml in the infra folder
 
 1. Either create a new bucket or use an existing bucket in the account and region where you will be deploying the application. This will be used to store the lambda deployment code.
 
@@ -144,10 +164,4 @@ The VPC template currently only allocates subnets and creates the VPC. you may w
 # AWS Service Catalog
 
 You can use AWS Service Catalog to create a VPC product that can be used by developers and infrastructure engineers to provision VPCs. For more details see ![AWS Service Catalog Getting Started](https://docs.aws.amazon.com/servicecatalog/latest/adminguide/getstarted.html)
-
-# EDIT
-
-It's a mix of "self-service-vpcs" and "vpc cidr mgmt"
-
-https://aws.amazon.com/pt/blogs/mt/self-service-vpcs-in-aws-control-tower-using-aws-service-catalog/
 
