@@ -3,10 +3,10 @@ AWSTemplateFormatVersion: 2010-09-09
 Parameters:
   CidrApiEndpoint:
     Type: String
-    Default: https://mhbtdbssbk.execute-api.us-east-1.amazonaws.com/v0
+    Default: https://tg56d6i330.execute-api.us-east-1.amazonaws.com/v0
   VpcCidrSize:
     Type: String
-    AllowedValues: ["21", "22", "23", "24", "25", "26", "27", "28" ]
+    AllowedValues: ["21", "22", "23"]
   ProjectCode:
     Type: String
   Requestor:
@@ -15,12 +15,35 @@ Parameters:
     Type: String
   Environment:
     Type: String
-    Description: Dev|Stg|Prod
+    Description: us-east-1
+    Default: us-east-1
+  RegionCIDR:
+    Description: Region CIDR
+    Type: String
+    Default: 172.19.0.0/16
   pTransitGatewayId:
     Description: "The Transit Gateway ID. Example: tgw-11122233"
     Type: String
     AllowedPattern: "tgw-[0-9a-zA-Z]{1,25}$"
-    Default: tgw-07463842c8c445995
+    Default: tgw-020a843d91763d497
+  PublicSubnets:
+    Description: "Will has Public Subnets?"
+    AllowedValues: ["yes", "no"]
+    Type: String
+    Default: "no"
+  NetworkAccount:
+    Description: "It is Network Account?"
+    AllowedValues: ["yes", "no"]
+    Type: String
+    Default: "no"
+  RouteTableID:
+    Description: RouteTable ID
+    Type: String
+
+Conditions:
+    HasPublicSubnets: !Equals [!Ref PublicSubnets, "yes"]
+    ItIsNetworkAccount: !Equals [!Ref NetworkAccount, "yes"]
+    WorkLoadAccount: !Equals [!Ref NetworkAccount, "no"]
 
 Resources:
   rVpc:
@@ -29,6 +52,45 @@ Resources:
       CidrBlock: !GetAtt AllocateCidr.cidr
       EnableDnsSupport: true
       EnableDnsHostnames: true
+  
+  InternetGateway:
+    Condition: HasPublicSubnets
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: "auto-delete"
+        Value: "never"
+      - Key: "auto-stop"
+        Value: "no"
+
+  AttachInternetGateway:
+    Condition: HasPublicSubnets
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties: 
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref rVpc
+  
+  EIP1:
+    Condition: ItIsNetworkAccount
+    Type: AWS::EC2::EIP
+  
+  NATGateway1:
+    Condition: HasPublicSubnets 
+    Type: AWS::EC2::NatGateway
+    Properties:
+        AllocationId: !GetAtt EIP1.AllocationId
+        SubnetId: !Ref rPublicSubnet1
+  
+  EIP2:
+    Condition: ItIsNetworkAccount
+    Type: AWS::EC2::EIP
+  
+  NATGateway2:
+    Condition: HasPublicSubnets
+    Type: AWS::EC2::NatGateway
+    Properties:
+        AllocationId: !GetAtt EIP2.AllocationId
+        SubnetId: !Ref rPublicSubnet2
 
 # Now that we have the VPC - we create the subnet layout for a workload account
   #
@@ -56,7 +118,8 @@ Resources:
   # Since these are 'hostbits' they function different from the network bits.
   # Simply subtract the value from 32 (IPv4) or 128 (IPv6) to determine the hostbit setting.
   #
-  # Examples - /27 == (32-27) == 5 hostbits
+  # Examples - /28 == (32-28) == 4 hostbits
+  #            /27 == (32-27) == 5 hostbits
   #            /26 == (32-26) == 6 hostbits
   #            /25 == (32-25) == 7 hostbits
   #            /24 == (32-24) == 8 hostbits
@@ -103,6 +166,30 @@ Resources:
       Tags:
       - Key: Name
         Value: !Sub ${Environment}-priv-az2
+  
+  rPublicSubnet1:
+    Condition: HasPublicSubnets
+    Type: AWS::EC2::Subnet
+    Properties:
+      MapPublicIpOnLaunch: true
+      CidrBlock: !Select [ 3, !Cidr [!GetAtt rVpc.CidrBlock, 4, 7 ]]
+      VpcId: !Ref rVpc
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+      - Key: Name
+        Value: !Sub ${Environment}-public-az1
+
+  rPublicSubnet2:
+    Condition: HasPublicSubnets
+    Type: AWS::EC2::Subnet
+    Properties:
+      MapPublicIpOnLaunch: true
+      CidrBlock: !Select [ 4, !Cidr [!GetAtt rVpc.CidrBlock, 5, 7 ]]
+      VpcId: !Ref rVpc
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+      - Key: Name
+        Value: !Sub ${Environment}-public-az2
 
 # Add route-tables and route-entrys
 
@@ -113,6 +200,16 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub ${Environment}-priv
+  
+  rPublicRouteTable:
+    DependsOn: InternetGateway
+    Condition: HasPublicSubnets
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref rVpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-public-rtb
 
 # Associate route tables to the subnets.
 #
@@ -130,6 +227,36 @@ Resources:
       SubnetId: !Ref rPrivateSubnet2
       RouteTableId: !Ref rPrivateRouteTable
   
+  rTGWSubnet1RouteTableAssociation:
+    Condition: ItIsNetworkAccount
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref TGWAttachSubnet1
+      RouteTableId: !Ref rPrivateRouteTable
+
+  rTGWSubnet2RouteTableAssociation:
+    Condition: ItIsNetworkAccount
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref TGWAttachSubnet2
+      RouteTableId: !Ref rPrivateRouteTable
+  
+  rPublicSubnet1RouteTableAssociation:
+    DependsOn: InternetGateway
+    Condition: HasPublicSubnets
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref rPublicSubnet1
+      RouteTableId: !Ref rPublicRouteTable
+
+  rPublicSubnet2RouteTableAssociation:
+    DependsOn: InternetGateway
+    Condition: HasPublicSubnets
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref rPublicSubnet2
+      RouteTableId: !Ref rPublicRouteTable
+  
   rTGWAttachment:
       Type: AWS::EC2::TransitGatewayAttachment
       Properties: 
@@ -143,6 +270,7 @@ Resources:
             Value: CloudFormation
 
   rTGWDefaultRoute:
+    Condition: WorkLoadAccount
     DependsOn:
       - rTGWAttachment
     Type: AWS::EC2::Route
@@ -150,6 +278,44 @@ Resources:
       DestinationCidrBlock: 0.0.0.0/0
       RouteTableId: !Ref rPrivateRouteTable
       TransitGatewayId: !Ref pTransitGatewayId
+  
+  rTGWNetworkAccountRoute:
+    Condition: ItIsNetworkAccount
+    DependsOn:
+      - rTGWAttachment
+    Type: AWS::EC2::Route
+    Properties: 
+      DestinationCidrBlock: 0.0.0.0/0
+      RouteTableId: !Ref rPrivateRouteTable
+      NatGatewayId: !Ref NATGateway1
+  
+  rPublicDefaultRoute:
+    DependsOn:
+      - rPublicSubnet1RouteTableAssociation
+      - rPublicSubnet2RouteTableAssociation
+    Condition: HasPublicSubnets
+    Type: AWS::EC2::Route
+    Properties: 
+      DestinationCidrBlock: 0.0.0.0/0
+      RouteTableId: !Ref rPublicRouteTable
+      GatewayId: !Ref InternetGateway
+  
+  VPCInternetRoute:
+    Condition: ItIsNetworkAccount
+    Type: AWS::EC2::Route
+    Properties: 
+      DestinationCidrBlock: !Ref RegionCIDR
+      RouteTableId: !Ref rPublicRouteTable
+      TransitGatewayId: !Ref pTransitGatewayId
+  
+  InternetRouteTGW:
+    Condition: ItIsNetworkAccount
+    Type: AWS::EC2::TransitGatewayRoute
+    Properties: 
+      Blackhole: false
+      DestinationCidrBlock: 0.0.0.0/0
+      TransitGatewayAttachmentId: !Ref rTGWAttachment
+      TransitGatewayRouteTableId: !Ref RouteTableID
 
 
 ############ Lambda Function get available CIDR ############

@@ -26,13 +26,80 @@ Parameters:
     Type: String
     Description: The full S3 location where the VPC product template is uploaded to.
     Default: https://marketplace-sa-resources-ct-us-east-1.s3.amazonaws.com/ct-blogs-content/product-vpc.cf.yml
-
-  pVpcLaunchRoleName:
+  
+  pRoleName:
     Type: String
-    Description: The launch role name that is used to launch the VPC product in the spoke accounts.
+    Default: service-catalog-vpc-launch
 
 
 Resources:
+
+  rVpcLaunchRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - servicecatalog.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      RoleName: !Ref pRoleName
+
+
+  rVpcLaunchPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: SC-VPC-Product
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - ec2:AssociateRouteTable
+              - ec2:AuthorizeSecurityGroupEgress
+              - ec2:AuthorizeSecurityGroupIngress
+              - ec2:CreateRoute
+              - ec2:CreateRouteTable
+              - ec2:CreateSecurityGroup
+              - ec2:CreateSubnet
+              - ec2:CreateTags
+              - ec2:CreateTransitGatewayVpcAttachment
+              - ec2:CreateVpc
+              - ec2:DeleteRoute
+              - ec2:DeleteRouteTable
+              - ec2:DeleteSecurityGroup
+              - ec2:DeleteSubnet
+              - ec2:DeleteTransitGatewayVpcAttachment
+              - ec2:DeleteVpc
+              - ec2:Describe*
+              - ec2:DisassociateRouteTable
+              - ec2:ModifyVpcAttribute
+              - ec2:ReplaceRoute
+              - ec2:RevokeSecurityGroupEgress
+              - ec2:RevokeSecurityGroupIngress
+              - cloudformation:CreateStack
+              - cloudformation:DeleteStack
+              - cloudformation:DescribeStackEvents
+              - cloudformation:DescribeStacks
+              - cloudformation:GetTemplateSummary
+              - cloudformation:SetStackPolicy
+              - cloudformation:ValidateTemplate
+              - cloudformation:UpdateStack
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - s3:GetObject
+            Resource: '*'
+            Condition:
+              StringEquals:
+                s3:ExistingObjectTag/servicecatalog:provisioning: true
+
+      Roles:
+        - !Ref rVpcLaunchRole
 
 ##### Portfolio Resources #####
 
@@ -67,7 +134,7 @@ Resources:
     Properties:
       AcceptLanguage: en
       Description: The launch role constraint used to restrict who can launch the VPC product from the portfolio.
-      LocalRoleName: !Ref pVpcLaunchRoleName
+      LocalRoleName: !Ref pRoleName
       PortfolioId: !Ref rMasterPortfolio
       ProductId: !Ref rVpcProduct
 
@@ -99,3 +166,15 @@ Outputs:
     Value: !GetAtt rVpcProduct.ProductName
     Export:
       Name: VPC-PRODUCT-NAME
+  
+  oVpcLaunchRole:
+    Description: The SC VPC launch role resource name
+    Value: !Ref rVpcLaunchRole
+    Export:
+      Name: VPC-LAUNCH-ROLE
+
+  oVpcLaunchPolicy:
+    Description: The SC VPC launch policy resource name
+    Value: !Ref rVpcLaunchPolicy
+    Export:
+      Name: VPC-LAUNCH-POLICY
