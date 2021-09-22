@@ -1,0 +1,16 @@
+Resources:
+  TransitGateway:
+    Type: "AWS::EC2::TransitGateway"
+    Properties:
+      AmazonSideAsn: 65000
+      AutoAcceptSharedAttachments: "enable"
+      DefaultRouteTableAssociation: "enable"
+      DnsSupport: "enable"
+      VpnEcmpSupport: "enable"
+
+Outputs:
+    TransitGateway:
+        Description: Static Transit Gateway Id
+        Value: !Ref TransitGateway
+        Export:
+            Name: TransitGatewayId

@@ -1,0 +1,23 @@
+Parameters:
+  CustomerIP:
+    Type: String
+    Description: Customer IP
+  
+  BgpAsn:
+    Type: Number
+    Default: 65534
+
+Resources:
+  CustomerGateway: 
+      Type: AWS::EC2::CustomerGateway
+      Properties: 
+          Type: ipsec.1
+          BgpAsn: !Ref BgpAsn
+          IpAddress: !Ref CustomerIP
+  
+  VPN:
+    Type: AWS::EC2::VPNConnection
+    Properties: 
+      CustomerGatewayId: !Ref CustomerGateway
+      TransitGatewayId: !ImportValue TransitGatewayId
+      Type: ipsec.1

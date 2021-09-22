@@ -1,0 +1,18 @@
+Parameters:
+  LocalCIDR:
+    Type: String
+  
+  RouteTableID:
+    Type: String
+  
+  TransitGatewayAttachmentId:
+    Type: String
+
+Resources:
+  MyVPNRoute:
+    Type: AWS::EC2::TransitGatewayRoute
+    Properties: 
+      Blackhole: false
+      DestinationCidrBlock: !Ref LocalCIDR
+      TransitGatewayAttachmentId: !Ref TransitGatewayAttachmentId
+      TransitGatewayRouteTableId: !Ref RouteTableID
