@@ -2,10 +2,18 @@ Parameters:
   CustomerIP:
     Type: String
     Description: Customer IP
+    Default: 35.171.8.37
   
   BgpAsn:
     Type: Number
     Default: 65534
+  
+  LocalCIDR:
+    Type: String
+    Default: 10.10.0.0/16
+
+  RouteTableID:
+    Type: String
 
 Resources:
   CustomerGateway: 
@@ -15,9 +23,132 @@ Resources:
           BgpAsn: !Ref BgpAsn
           IpAddress: !Ref CustomerIP
   
-  VPN:
+  VPNConnection:
     Type: AWS::EC2::VPNConnection
     Properties: 
       CustomerGatewayId: !Ref CustomerGateway
       TransitGatewayId: !ImportValue TransitGatewayId
+      StaticRoutesOnly: True
       Type: ipsec.1
+  
+  TgwLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-${AWS::Region}-tgw-lambda-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt TransitGatewayAttachmentFunctionLogGroup.Arn
+              - Effect: Allow
+                Action:
+                  - ec2:*
+                Resource: "*"
+  
+  TransitGatewayAttachmentFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+        LogGroupName: !Sub /aws/lambda/${AWS::StackName}-tgw-attachment-id
+        RetentionInDays: 1
+
+  TransitGatewayAttachmentIdFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: TransitGatewayAttachmentFunctionLogGroup
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-tgw-attachmentfunction
+      Handler: "index.handler"
+      Role: !GetAtt TgwLambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import urllib3
+          import json
+          import boto3
+          http = urllib3.PoolManager()
+          SUCCESS = "SUCCESS"
+          FAILED = "FAILED"
+
+          def send(event, context, responseStatus, responseData, physicalResourceId=None, noEcho=False):
+              responseUrl = event['ResponseURL']
+              print(responseUrl)
+              responseBody = {}
+              responseBody['Status'] = responseStatus
+              responseBody['Reason'] = 'See the details in CloudWatch Log Stream: ' + \
+                  context.log_stream_name
+              responseBody['PhysicalResourceId'] = physicalResourceId or context.log_stream_name
+              responseBody['StackId'] = event['StackId']
+              responseBody['RequestId'] = event['RequestId']
+              responseBody['LogicalResourceId'] = event['LogicalResourceId']
+              responseBody['NoEcho'] = noEcho
+              responseBody['Data'] = responseData
+              json_responseBody = json.dumps(responseBody)
+              print("Response body:\n" + json_responseBody)
+              headers = {
+                  'content-type': '',
+                  'content-length': str(len(json_responseBody))
+              }
+              try:
+                  response = http.request(
+                      'PUT', responseUrl, body=json_responseBody.encode('utf-8'), headers=headers)
+                  print("Status code: " + response.reason)
+              except Exception as e:
+                  print("send(..) failed executing requests.put(..): " + str(e))
+
+          def handler(event, context):
+              try:
+                  if(event['RequestType'] == 'Create' or 'Update'):
+                      vpnID = event['ResourceProperties']['vpnID']
+                      client = boto3.client('ec2')
+                      response = client.describe_transit_gateway_attachments(
+                          Filters=[
+                              {
+                                  'Name': 'resource-id',
+                                  'Values': [
+                                      vpnID
+                                  ]
+                              },
+                          ],
+                      )
+                      responseData = {}
+                      responseData['TransitGatewayAttachmentId'] = response['TransitGatewayAttachments'][0]['TransitGatewayAttachmentId']
+                      send(event, context, SUCCESS, responseData)
+                  else:
+                      print("No action required")
+                  if(event['RequestType'] == 'Delete'):
+                      responseData = {}
+                      send(event, context, SUCCESS, responseData)
+              except Exception as e:
+                  print('Failed to process:', e)
+                  responseData = {}
+                  send(event, context, FAILED, responseData)
+      Runtime: python3.7
+      Timeout: 30
+
+  TransitGatewayAttachmentIdFinder:
+    Type: "Custom::TransitGatewayAttachmentIdFinder"
+    Version: "1.0"
+    Properties:
+      ServiceToken: !GetAtt TransitGatewayAttachmentIdFunction.Arn
+      vpnID: !Ref VPNConnection
+  
+  MyVPNRoute:
+    Type: AWS::EC2::TransitGatewayRoute
+    Properties: 
+      Blackhole: false
+      DestinationCidrBlock: !Ref LocalCIDR
+      TransitGatewayAttachmentId: !GetAtt TransitGatewayAttachmentIdFinder.TransitGatewayAttachmentId
+      TransitGatewayRouteTableId: !Ref RouteTableID
