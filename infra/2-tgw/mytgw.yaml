@@ -1,0 +1,64 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  AWS CloudFormation Template to create Transit Gateway and share via Resource Access Manager 
+
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Transit Gateway Configuration
+        Parameters:
+          - pASNTGW
+          - pCustomerName
+#      - Label:
+#          default: Organization Configuration
+#        Parameters:
+#          - pOrgId
+#          - pMasterAccountId
+
+Parameters:
+#  pOrgId: 
+#    Type: String
+#    Description: Enter Organization Id (e.g. o-12345) if Organization sharing is enabled
+#  pMasterAccountId:
+#    Type: String
+#    Description: Account Id of master account in AWS Organization
+  pASNTGW:
+    Type: Number
+    Default: 65000
+    Description: ASN of Transit Gateway
+#  pTGWShareName:
+#    Type: String
+  pCustomerName:
+    Type: String
+
+
+Resources:
+  rTransitGateway:
+    Type: "AWS::EC2::TransitGateway"
+    Properties:
+      AmazonSideAsn: !Ref pASNTGW
+      AutoAcceptSharedAttachments: "enable"
+      DefaultRouteTableAssociation: "enable"
+      DnsSupport: "enable"
+      VpnEcmpSupport: "enable"
+      Tags:
+      - Key: Name
+        Value: !Ref pCustomerName
+  
+#  rTGWShare:
+#    Type: "AWS::RAM::ResourceShare"
+#    Properties:
+#      AllowExternalPrincipals: true
+#      Name: !Ref pTGWShareName
+#      Principals: 
+#        - !Sub 'arn:aws:organizations::${pMasterAccountId}:organization/${pOrgId}'
+#      ResourceArns: 
+#        - !Ref rTransitGateway
+
+Outputs:
+  oTransitGateway:
+      Description: Static Transit Gateway Id
+      Value: !Ref rTransitGateway
+      Export:
+          Name: TransitGatewayId

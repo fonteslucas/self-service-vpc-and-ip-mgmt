@@ -1,27 +1,50 @@
 AWSTemplateFormatVersion: 2010-09-09
+
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: DynamoDB Configuration
+        Parameters:
+          - pDDBVPCSCIDRTableName
+          - pDDBSupernetsTableName
+      - Label:
+          default: Lambda Configuration
+        Parameters:
+          - pS3CodeBucket
+      - Label:
+          default: Notification Configuration
+        Parameters:
+          - pFailureAlertEmail
+#      - Label:
+#          default: Organization Configuration
+#        Parameters:
+#          - pOrganizationsId
+#          - pRootOrganizationUnitId
+
 Parameters:
-  DDBSubnetsTableName:
+  pDDBVPCSCIDRTableName:
     Type: String
-    Default: ip-mgmt-subnets
-  DDBSupernetsTableName:
+    Default: ip-mgmt-vpc-cidrs
+  pDDBSupernetsTableName:
     Type: String
     Default: ip-mgmt-supernets
-  S3CodeBucket:
+  pS3CodeBucket:
     Type: String
-  FailureAlertEmail:
+  pFailureAlertEmail:
     Type: String
-#  OrganizationsId:
+#  pOrganizationsId:
 #    Type: String
 #    Default: o-kfsxtj8fwl
-#  RootOrganizationUnitId:
+#  pRootOrganizationUnitId:
 #    Type: String
 #    Default: r-4rhz
 
 Resources:
-  DynamoDBSubnetsTable: 
+  rDynamoDBVPCSCIDRTable: 
     Type: AWS::DynamoDB::Table
     Properties: 
-      TableName: !Ref DDBSubnetsTableName
+      TableName: !Ref pDDBVPCSCIDRTableName
       AttributeDefinitions: 
         - 
           AttributeName: "Cidr"
@@ -34,10 +57,10 @@ Resources:
         ReadCapacityUnits: 5
         WriteCapacityUnits: 5
 
-  DynamoDBSupernetsTable:
+  rDynamoDBSupernetsTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Ref DDBSupernetsTableName
+      TableName: !Ref pDDBSupernetsTableName
       AttributeDefinitions:
         - 
           AttributeName: "Cidr"
@@ -50,7 +73,7 @@ Resources:
         ReadCapacityUnits: 5
         WriteCapacityUnits: 5
 
-  LambdaRole:
+  rLambdaRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -73,28 +96,28 @@ Resources:
                 Effect: Allow
                 Action:
                 - sns:Publish
-                Resource: !Ref SnsAlerts
+                Resource: !Ref rSnsAlerts
       Path: /
 
-  IpMgmtFunction: 
+  rIpMgmtFunction: 
     Type: AWS::Lambda::Function
     Properties: 
       Handler: index.lambda_handler
-      Role: !GetAtt LambdaRole.Arn
+      Role: !GetAtt rLambdaRole.Arn
       Code: 
-        S3Bucket: !Ref S3CodeBucket
+        S3Bucket: !Ref pS3CodeBucket
         S3Key: ipmgmt.zip
       Runtime: python3.8
       Timeout: 120
       DeadLetterConfig:
-        TargetArn: !Ref SnsAlerts
+        TargetArn: !Ref rSnsAlerts
       Environment:
         Variables:
-          DYNAMODB_TABLE_NAME: !Ref DDBSubnetsTableName
-          SUPERNETSTABLE: !Ref DDBSupernetsTableName
-          SNS_TOPIC: !Ref SnsAlerts
+          DYNAMODB_TABLE_NAME: !Ref pDDBVPCSCIDRTableName
+          SUPERNETSTABLE: !Ref pDDBSupernetsTableName
+          SNS_TOPIC: !Ref rSnsAlerts
 
-  ApiGatewayRestApi:
+  rApiGatewayRestApi:
     Type: AWS::ApiGateway::RestApi
     Properties:
       Description: An API Gateway to allow IP Management
@@ -111,22 +134,22 @@ Resources:
           Resource: !Sub  arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*
 #          Condition:
 #            ForAnyValue:StringLike:
-#              aws:PrincipalOrgPaths: !Sub ${OrganizationsId}/${RootOrganizationUnitId}/*
+#              aws:PrincipalOrgPaths: !Sub ${pOrganizationsId}/${pRootOrganizationUnitId}/*
 
-  RequestValidator:
+  rRequestValidator:
     Type: AWS::ApiGateway::RequestValidator
     Properties: 
-      RestApiId: !Ref ApiGatewayRestApi
+      RestApiId: !Ref rApiGatewayRestApi
       ValidateRequestParameters: true
 
-  ApiGatewayResource:
+  rApiGatewayResource:
     Type: AWS::ApiGateway::Resource
     Properties:
-      ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+      ParentId: !GetAtt rApiGatewayRestApi.RootResourceId
       PathPart: 'lambda'
-      RestApiId: !Ref ApiGatewayRestApi
+      RestApiId: !Ref rApiGatewayRestApi
 
-  ApiGatewayGetMethod:
+  rApiGatewayGetMethod:
     Type: AWS::ApiGateway::Method
     Properties:
       ApiKeyRequired: false
@@ -134,20 +157,20 @@ Resources:
       HttpMethod: GET
       Integration:
         ConnectionType: INTERNET
-        Credentials: !GetAtt ApiGatewayIamRole.Arn
+        Credentials: !GetAtt rApiGatewayIamRole.Arn
         IntegrationHttpMethod: POST
         PassthroughBehavior: WHEN_NO_MATCH
         TimeoutInMillis: 29000
         Type: AWS_PROXY
-        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${IpMgmtFunction.Arn}/invocations'
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${rIpMgmtFunction.Arn}/invocations'
       OperationName: 'lambda'
-      ResourceId: !Ref ApiGatewayResource
-      RestApiId: !Ref ApiGatewayRestApi
-      RequestValidatorId: !Ref RequestValidator
+      ResourceId: !Ref rApiGatewayResource
+      RestApiId: !Ref rApiGatewayRestApi
+      RequestValidatorId: !Ref rRequestValidator
       RequestParameters:
         method.request.querystring.Cidr: true
 
-  ApiGatewayMethod:
+  rApiGatewayMethod:
     Type: AWS::ApiGateway::Method
     Properties:
       ApiKeyRequired: false
@@ -155,16 +178,16 @@ Resources:
       HttpMethod: POST
       Integration:
         ConnectionType: INTERNET
-        Credentials: !GetAtt ApiGatewayIamRole.Arn
+        Credentials: !GetAtt rApiGatewayIamRole.Arn
         IntegrationHttpMethod: POST
         PassthroughBehavior: WHEN_NO_MATCH
         TimeoutInMillis: 29000
         Type: AWS_PROXY
-        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${IpMgmtFunction.Arn}/invocations'
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${rIpMgmtFunction.Arn}/invocations'
       OperationName: 'lambda'
-      ResourceId: !Ref ApiGatewayResource
-      RestApiId: !Ref ApiGatewayRestApi
-      RequestValidatorId: !Ref RequestValidator
+      ResourceId: !Ref rApiGatewayResource
+      RestApiId: !Ref rApiGatewayRestApi
+      RequestValidatorId: !Ref rRequestValidator
       RequestParameters:
         method.request.querystring.AccountId: true
         method.request.querystring.prefix: true
@@ -174,7 +197,7 @@ Resources:
         method.request.querystring.Region: true
         method.request.querystring.Env: true
 
-  ApiGatewayDeleteMethod:
+  rApiGatewayDeleteMethod:
     Type: AWS::ApiGateway::Method
     Properties:
       ApiKeyRequired: false
@@ -182,17 +205,17 @@ Resources:
       HttpMethod: DELETE
       Integration:
         ConnectionType: INTERNET
-        Credentials: !GetAtt ApiGatewayIamRole.Arn
+        Credentials: !GetAtt rApiGatewayIamRole.Arn
         IntegrationHttpMethod: POST
         PassthroughBehavior: WHEN_NO_MATCH
         TimeoutInMillis: 29000
         Type: AWS_PROXY
-        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${IpMgmtFunction.Arn}/invocations'
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${rIpMgmtFunction.Arn}/invocations'
       OperationName: 'lambda'
-      ResourceId: !Ref ApiGatewayResource
-      RestApiId: !Ref ApiGatewayRestApi
+      ResourceId: !Ref rApiGatewayResource
+      RestApiId: !Ref rApiGatewayRestApi
 
-  ApiGatewayUpdateMethod:
+  rApiGatewayUpdateMethod:
     Type: AWS::ApiGateway::Method
     Properties:
       ApiKeyRequired: false
@@ -200,43 +223,43 @@ Resources:
       HttpMethod: PUT
       Integration:
         ConnectionType: INTERNET
-        Credentials: !GetAtt ApiGatewayIamRole.Arn
+        Credentials: !GetAtt rApiGatewayIamRole.Arn
         IntegrationHttpMethod: POST
         PassthroughBehavior: WHEN_NO_MATCH
         TimeoutInMillis: 29000
         Type: AWS_PROXY
-        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${IpMgmtFunction.Arn}/invocations'
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${rIpMgmtFunction.Arn}/invocations'
       OperationName: 'lambda'
-      ResourceId: !Ref ApiGatewayResource
-      RestApiId: !Ref ApiGatewayRestApi
-      RequestValidatorId: !Ref RequestValidator
+      ResourceId: !Ref rApiGatewayResource
+      RestApiId: !Ref rApiGatewayRestApi
+      RequestValidatorId: !Ref rRequestValidator
       RequestParameters:
         method.request.querystring.Cidr: true
         method.request.querystring.VpcId: true
 
-  ApiGatewayModel:
+  rApiGatewayModel:
     Type: AWS::ApiGateway::Model
     Properties:
       ContentType: 'application/json'
-      RestApiId: !Ref ApiGatewayRestApi
+      RestApiId: !Ref rApiGatewayRestApi
       Schema: {}
 
-  ApiGatewayStage:
+  rApiGatewayStage:
     Type: AWS::ApiGateway::Stage
     Properties:
-      DeploymentId: !Ref ApiGatewayDeployment
+      DeploymentId: !Ref rApiGatewayDeployment
       Description: Lambda API Stage v0
-      RestApiId: !Ref ApiGatewayRestApi
+      RestApiId: !Ref rApiGatewayRestApi
       StageName: 'v0'
 
-  ApiGatewayDeployment:
+  rApiGatewayDeployment:
     Type: AWS::ApiGateway::Deployment
-    DependsOn: ApiGatewayMethod
+    DependsOn: rApiGatewayMethod
     Properties:
       Description: Lambda API Deployment
-      RestApiId: !Ref ApiGatewayRestApi
+      RestApiId: !Ref rApiGatewayRestApi
 
-  ApiGatewayIamRole:
+  rApiGatewayIamRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -257,23 +280,23 @@ Resources:
             Statement:
               - Effect: 'Allow'
                 Action: 'lambda:*'
-                Resource: !GetAtt IpMgmtFunction.Arn
+                Resource: !GetAtt rIpMgmtFunction.Arn
 
-  SnsAlerts:
+  rSnsAlerts:
     Type: AWS::SNS::Topic
     Properties: 
       Subscription: 
-        - Endpoint: !Ref FailureAlertEmail
+        - Endpoint: !Ref pFailureAlertEmail
           Protocol: email
 
 Outputs:
-  CidrMgmtDynamoDBSupernetsTable:
-    Description: DynamoDB supernet table arn used by AWS backup
-    Value: !GetAtt DynamoDBSupernetsTable.Arn
+  oCidrMgmtDynamoDBSupernetsTable:
+    Description: DynamoDB supernet table arn used by AWS Backup
+    Value: !GetAtt rDynamoDBSupernetsTable.Arn
     Export:
       Name: CidrMgmtDynamoDBSupernetsTable
-  CidrMgmtDynamoDBSubnetsTable:
-    Description: DynamoDB supnet table arn used by AWS backup
-    Value: !GetAtt DynamoDBSubnetsTable.Arn
+  oCidrMgmtDynamoDBSubnetsTable:
+    Description: DynamoDB supnet table arn used by AWS Backup
+    Value: !GetAtt rDynamoDBVPCSCIDRTable.Arn
     Export:
-      Name: CidrMgmtDynamoDBSubnetsTable
+      Name: CidrMgmtDynamoDBVPCSCIDRTable

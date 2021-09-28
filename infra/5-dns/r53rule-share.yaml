@@ -1,0 +1,116 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  AWS CloudFormation Template to create the resolver rules and share the Resolver rules via Resource Access Manager  
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: VPC Configuration
+        Parameters:
+          - pVpcId
+          - pPrivatesubnet1
+          - pPrivatesubnet2
+          - pOnpremendpointcidr
+      - Label:
+          default: Resolver Rule Configuration
+        Parameters:
+          - pDomainFQDN
+          - pDomainTargets
+#      - Label:
+#          default: Organization Configuration
+#        Parameters:
+#          - pOrgId
+#          - pMasterAccountId
+
+Parameters:
+  pVpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID that hosts resolver endpoints
+  pPrivatesubnet1:
+    Type: AWS::EC2::Subnet::Id
+    Description: Chose the private subnet in AZ-1
+    Default: subnet-0a7136c63802d0fdf
+  pPrivatesubnet2:
+    Type: AWS::EC2::Subnet::Id
+    Description: Chose the private subnet in AZ-2
+    Default: subnet-0eb69a9570f4e3f2d
+  pOnpremendpointcidr: 
+    Type: String
+    Default: 10.10.0.0/16
+    Description: Provide the CIDRs of resources in on-prem that will be accessed from AWS via outbound endpoint.
+  pRuleName:
+    Type: String
+    Description: resolver rule name
+#  pResourceShareName:
+#    Type: String
+#    Description: resource share name
+  pDomainFQDN:
+    Type: String
+    Description: Provide FQDN for domain
+    Default: fontesdaterra.local
+  pDomainTargets:
+    Type: List<String>
+    Default: 10.10.1.34:53, 10.10.2.84:53
+    Description: A comma separated list of IP:port targets (two targets) for example1.com domain resolution. Please change the default IPs as per your environment.
+#  pOrgId: 
+#    Type: String
+#    Description: Enter Organization Id (e.g. o-12345) if Organization sharing is enabled
+#  pMasterAccountId:
+#    Type: String
+#    Description: Account Id of master account in AWS Organization
+
+Resources:
+  rResolverSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group controlling Route53 Endpoint access
+      SecurityGroupEgress:
+            - IpProtocol: tcp
+              FromPort: 53
+              ToPort: 53
+              CidrIp: !Ref pOnpremendpointcidr
+            - IpProtocol: udp
+              FromPort: 53
+              ToPort: 53
+              CidrIp: !Ref pOnpremendpointcidr
+      VpcId: !Ref pVpcId
+
+  rResolverEndpoint:
+    Type: AWS::Route53Resolver::ResolverEndpoint
+    Properties :
+      Name : OutboundEndpoint   
+      Direction : OUTBOUND
+      IpAddresses : 
+        - SubnetId: !Ref pPrivatesubnet1
+        - SubnetId: !Ref pPrivatesubnet2    
+      SecurityGroupIds : 
+        - !GetAtt rResolverSecurityGroup.GroupId
+  
+  rDomainRule:
+    Type : AWS::Route53Resolver::ResolverRule
+    Properties : 
+      DomainName : !Ref pDomainFQDN
+      Name : !Ref pRuleName
+      ResolverEndpointId : !Ref rResolverEndpoint
+      RuleType : FORWARD 
+      TargetIps :
+        - Ip: !Select [ 0, !Split [ ":", !Select [ 0, !Ref pDomainTargets ] ] ]
+          Port: !Select [ 1, !Split [ ":", !Select [ 0, !Ref pDomainTargets ] ] ]
+        - Ip: !Select [ 0, !Split [ ":", !Select [ 1, !Ref pDomainTargets ] ] ]
+          Port: !Select [ 1, !Split [ ":", !Select [ 1, !Ref pDomainTargets ] ] ]
+
+#  rResolverruleshare:
+#    Type: AWS::RAM::ResourceShare
+#    Properties:
+#      Name: !Ref pResourceShareName
+#      ResourceArns: !GetAtt rDomainRule.Arn
+#      Principals: 
+#       - !Sub 'arn:aws:organizations::${pMasterAccountId}:organization/${pOrgId}'
+
+Outputs:
+  oResolverEndpointId:
+    Description: Route 53 Resolver Endpoint ID
+    Value: !GetAtt rResolverEndpoint.ResolverEndpointId
+  oDomainRuleWithTwoTargets:
+    Description: Route 53 Resolver Rule ID for domain1fqdn
+    Value: !Ref rDomainRule

@@ -1,74 +1,110 @@
 AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  AWS CloudFormation Template to create VPC for Egress and Subnets calling the API IPMGMT Solution  
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: API GW Endpoint
+        Parameters:
+          - pCidrApiEndpoint
+      - Label:
+          default: Project Configuration
+        Parameters:
+          - pProjectCode
+          - pRequestor
+          - pReason
+          - pRegion
+      - Label:
+          default: Network Configuration
+        Parameters:
+          - pRegionCIDR
+          - pTransitGatewayId
+          - pRouteTableID
 
 Parameters:
-  CidrApiEndpoint:
+  pCidrApiEndpoint:
     Type: String
-    Default: https://tg56d6i330.execute-api.us-east-1.amazonaws.com/v0
-  ProjectCode:
+    Default: https://2oqinnk253.execute-api.us-east-1.amazonaws.com/v0
+  pProjectCode:
     Type: String
-  Requestor:
+  pRequestor:
     Type: String
-  Reason:
+  pReason:
     Type: String
-  Environment:
+  pRegion:
     Type: String
     Description: us-east-1
     Default: us-east-1
-#  RegionCIDR:
-#    Description: Region CIDR
-#    Type: String
-#    Default: 172.19.0.0/16
+  pRegionCIDR:
+    Description: Region CIDR
+    Type: String
+    Default: 172.19.0.0/16
   pTransitGatewayId:
     Description: "The Transit Gateway ID. Example: tgw-11122233"
     Type: String
     AllowedPattern: "tgw-[0-9a-zA-Z]{1,25}$"
-    Default: tgw-02b05783422749109
-  RouteTableID:
+    Default: tgw-012a6c6cea71d4625
+  pRouteTableID:
     Description: RouteTable ID
     Type: String
-    Default: tgw-rtb-0f7d69df741941239
-
+    Default: tgw-rtb-041beb0f089226561
 
 Resources:
   rVpc:
     Type: AWS::EC2::VPC
     Properties:
-      CidrBlock: !GetAtt AllocateCidr.cidr
+      CidrBlock: !GetAtt rAllocateCidr.cidr
       EnableDnsSupport: true
       EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: vpc-egress
   
-  InternetGateway:
+  rInternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
       Tags:
-      - Key: "auto-delete"
-        Value: "never"
-      - Key: "auto-stop"
-        Value: "no"
+        - Key: Name
+          Value: igw-egress
 
-  AttachInternetGateway:
+  rAttachInternetGateway:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties: 
-      InternetGatewayId: !Ref InternetGateway
+      InternetGatewayId: !Ref rInternetGateway
       VpcId: !Ref rVpc
   
-  EIP1:
+  rEIP1:
     Type: AWS::EC2::EIP
+    Properties:
+      Tags:
+      - Key: Name
+        Value: EIP-NGW-1
   
-  NATGateway1:
+  rNATGateway1:
     Type: AWS::EC2::NatGateway
     Properties:
-        AllocationId: !GetAtt EIP1.AllocationId
-        SubnetId: !Ref rPublicSubnet1
+      AllocationId: !GetAtt rEIP1.AllocationId
+      SubnetId: !Ref rPublicSubnet1
+      Tags:
+      - Key: Name
+        Value: NGW-1-Egress
   
-  EIP2:
+  rEIP2:
     Type: AWS::EC2::EIP
+    Properties:
+      Tags:
+      - Key: Name
+        Value: EIP-NGW-2
   
-  NATGateway2:
+  rNATGateway2:
     Type: AWS::EC2::NatGateway
     Properties:
-        AllocationId: !GetAtt EIP2.AllocationId
-        SubnetId: !Ref rPublicSubnet2
+      AllocationId: !GetAtt rEIP2.AllocationId
+      SubnetId: !Ref rPublicSubnet2
+      Tags:
+      - Key: Name
+        Value: NGW-2-Egress
 
 # Now that we have the VPC - we create the subnet layout for a workload account
   #
@@ -105,7 +141,7 @@ Resources:
   # This may require adjustment if the allocation strategy changes!
   #
 
-  TGWAttachSubnet1:
+  rTGWAttachSubnet1:
       Type: AWS::EC2::Subnet
       Properties:
         CidrBlock: !Select [ 0, !Cidr [!GetAtt rVpc.CidrBlock, 1, 4 ]]
@@ -113,9 +149,9 @@ Resources:
         AvailabilityZone: !Select [0, !GetAZs '']
         Tags:
         - Key: Name
-          Value: !Sub ${Environment}-tgw-attach-az1
+          Value: egress-tgw-attach-az1
 
-  TGWAttachSubnet2:
+  rTGWAttachSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
       CidrBlock: !Select [ 1, !Cidr [!GetAtt rVpc.CidrBlock, 2, 4 ]]
@@ -123,7 +159,7 @@ Resources:
       AvailabilityZone: !Select [1, !GetAZs '']
       Tags:
       - Key: Name
-        Value: !Sub ${Environment}-tgw-attach-az2
+        Value: egress-tgw-attach-az2
 
   rPrivateSubnet1:
     Type: AWS::EC2::Subnet
@@ -133,7 +169,7 @@ Resources:
       AvailabilityZone: !Select [0, !GetAZs '']
       Tags:
       - Key: Name
-        Value: !Sub ${Environment}-priv-az1
+        Value: egress-priv-az1
 
   rPrivateSubnet2:
     Type: AWS::EC2::Subnet
@@ -143,7 +179,7 @@ Resources:
       AvailabilityZone: !Select [1, !GetAZs '']
       Tags:
       - Key: Name
-        Value: !Sub ${Environment}-priv-az2
+        Value: egress-priv-az2
   
   rPublicSubnet1:
     Type: AWS::EC2::Subnet
@@ -154,7 +190,7 @@ Resources:
       AvailabilityZone: !Select [0, !GetAZs '']
       Tags:
       - Key: Name
-        Value: !Sub ${Environment}-public-az1
+        Value: egress-public-az1
 
   rPublicSubnet2:
     Type: AWS::EC2::Subnet
@@ -165,7 +201,7 @@ Resources:
       AvailabilityZone: !Select [1, !GetAZs '']
       Tags:
       - Key: Name
-        Value: !Sub ${Environment}-public-az2
+        Value: egress-public-az2
 
 # Add route-tables and route-entrys
 
@@ -175,75 +211,75 @@ Resources:
       VpcId: !Ref rVpc
       Tags:
         - Key: Name
-          Value: !Sub ${Environment}-priv
+          Value: egress-priv-rtb
   
   rPublicRouteTable:
-    DependsOn: AttachInternetGateway
+    DependsOn: rAttachInternetGateway
     Type: AWS::EC2::RouteTable
     Properties:
       VpcId: !Ref rVpc
       Tags:
         - Key: Name
-          Value: !Sub ${Environment}-public-rtb
+          Value: egress-public-rtb
 
 # Associate route tables to the subnets.
 #
 # Private Subnets
 #
   rPrivateSubnet1RouteTableAssociation:
-    DependsOn: AttachInternetGateway
+    DependsOn: rAttachInternetGateway
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref rPrivateSubnet1
       RouteTableId: !Ref rPrivateRouteTable
 
   rPrivateSubnet2RouteTableAssociation:
-    DependsOn: AttachInternetGateway
+    DependsOn: rAttachInternetGateway
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref rPrivateSubnet2
       RouteTableId: !Ref rPrivateRouteTable
   
   rTGWSubnet1RouteTableAssociation:
-    DependsOn: AttachInternetGateway
+    DependsOn: rAttachInternetGateway
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      SubnetId: !Ref TGWAttachSubnet1
+      SubnetId: !Ref rTGWAttachSubnet1
       RouteTableId: !Ref rPrivateRouteTable
 
   rTGWSubnet2RouteTableAssociation:
-    DependsOn: AttachInternetGateway
+    DependsOn: rAttachInternetGateway
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      SubnetId: !Ref TGWAttachSubnet2
+      SubnetId: !Ref rTGWAttachSubnet2
       RouteTableId: !Ref rPrivateRouteTable
   
   rPublicSubnet1RouteTableAssociation:
-    DependsOn: AttachInternetGateway
+    DependsOn: rAttachInternetGateway
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref rPublicSubnet1
       RouteTableId: !Ref rPublicRouteTable
 
   rPublicSubnet2RouteTableAssociation:
-    DependsOn: AttachInternetGateway
+    DependsOn: rAttachInternetGateway
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref rPublicSubnet2
       RouteTableId: !Ref rPublicRouteTable
   
   rTGWAttachment:
-    DependsOn: AttachInternetGateway
+    DependsOn: rAttachInternetGateway
     Type: AWS::EC2::TransitGatewayAttachment
     Properties: 
       SubnetIds: 
-        - !Ref TGWAttachSubnet1
-        - !Ref TGWAttachSubnet2
+        - !Ref rTGWAttachSubnet1
+        - !Ref rTGWAttachSubnet2
       TransitGatewayId: !Ref pTransitGatewayId
       VpcId: !Ref rVpc
       Tags:
-        - Key: CreatedBy
-          Value: CloudFormation
+      - Key: Name
+        Value: egress-tgw-attachent
   
   rTGWNetworkAccountRoute:
     DependsOn:
@@ -252,7 +288,7 @@ Resources:
     Properties: 
       DestinationCidrBlock: 0.0.0.0/0
       RouteTableId: !Ref rPrivateRouteTable
-      NatGatewayId: !Ref NATGateway1
+      NatGatewayId: !Ref rNATGateway1
   
   rPublicDefaultRoute:
     DependsOn:
@@ -262,29 +298,29 @@ Resources:
     Properties: 
       DestinationCidrBlock: 0.0.0.0/0
       RouteTableId: !Ref rPublicRouteTable
-      GatewayId: !Ref InternetGateway
+      GatewayId: !Ref rInternetGateway
   
-#  VPCInternetRoute:
-#    DependsOn: rTGWAttachment
-#    Type: AWS::EC2::Route
-#    Properties: 
-#      DestinationCidrBlock: !Ref RegionCIDR
-#      RouteTableId: !Ref rPublicRouteTable
-#      TransitGatewayId: !Ref pTransitGatewayId
+  rVPCInternetRoute:
+    DependsOn: rTGWAttachment
+    Type: AWS::EC2::Route
+    Properties: 
+      DestinationCidrBlock: !Ref pRegionCIDR
+      RouteTableId: !Ref rPublicRouteTable
+      TransitGatewayId: !Ref pTransitGatewayId
   
-  InternetRouteTGW:
-    DependsOn: AttachInternetGateway
+  rInternetRouteTGW:
+    DependsOn: rAttachInternetGateway
     Type: AWS::EC2::TransitGatewayRoute
     Properties: 
       Blackhole: false
       DestinationCidrBlock: 0.0.0.0/0
       TransitGatewayAttachmentId: !Ref rTGWAttachment
-      TransitGatewayRouteTableId: !Ref RouteTableID
+      TransitGatewayRouteTableId: !Ref pRouteTableID
 
 
 ############ Lambda Function get available CIDR ############
 
-  getCidr:
+  rGetCidr:
     Type: AWS::Lambda::Function
     Properties:
       Code:
@@ -375,12 +411,12 @@ Resources:
               return
       Description: Allocate Cidr addresses
       Runtime: python3.7
-      Role: !GetAtt LambdaExecutionRole.Arn
+      Role: !GetAtt rLambdaExecutionRole.Arn
       Timeout: 60
       MemorySize: 256
       Handler: index.lambda_handler
 
-  LambdaExecutionRole:
+  rLambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -412,24 +448,24 @@ Resources:
                   - logs:DescribeLogGroups
                 Resource: !Sub arn:${AWS::Partition}:logs:*:*:*
 
-  AllocateCidr:
+  rAllocateCidr:
     Type: Custom::AllocateCidr
     Properties:
-      ServiceToken: !GetAtt getCidr.Arn
+      ServiceToken: !GetAtt rGetCidr.Arn
       Prefix: 21
-      CidrApiEndpoint: !Ref CidrApiEndpoint
+      CidrApiEndpoint: !Ref pCidrApiEndpoint
       AccountId: !Ref AWS::AccountId
-      ProjectCode: !Ref ProjectCode
-      Requestor: !Ref Requestor
-      Reason: !Ref Reason
+      ProjectCode: !Ref pProjectCode
+      Requestor: !Ref pRequestor
+      Reason: !Ref pReason
       Region: !Ref AWS::Region
-      Env: !Ref Environment
-      ApiRegion: !Select [2, !Split [".", !Ref CidrApiEndpoint]]
+      Env: !Ref pRegion
+      ApiRegion: !Select [2, !Split [".", !Ref pCidrApiEndpoint]]
       StackId: !Ref AWS::StackId
 
 ############ Lambda Function update CIDR ############
 
-  updateCidr:
+  rUpdateCidr:
     Type: AWS::Lambda::Function
     Properties:
       Code:
@@ -516,12 +552,12 @@ Resources:
               return
       Description: Allocate Cidr addresses
       Runtime: python3.7
-      Role: !GetAtt UpdateCidrLambdaExecutionRole.Arn
+      Role: !GetAtt rUpdateCidrLambdaExecutionRole.Arn
       Timeout: 60
       MemorySize: 256
       Handler: index.lambda_handler
 
-  UpdateCidrLambdaExecutionRole:
+  rUpdateCidrLambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -553,20 +589,16 @@ Resources:
                   - logs:DescribeLogGroups
                 Resource: !Sub arn:${AWS::Partition}:logs:*:*:*
 
-  UpdateCidr:
+  rCustomUpdateCidr:
     Type: Custom::updateCidr
     Properties:
-      ServiceToken: !GetAtt updateCidr.Arn
-      CidrApiEndpoint: !Ref CidrApiEndpoint
-      Cidr: !GetAtt AllocateCidr.cidr
+      ServiceToken: !GetAtt rUpdateCidr.Arn
+      CidrApiEndpoint: !Ref pCidrApiEndpoint
+      Cidr: !GetAtt rAllocateCidr.cidr
       VpcId: !Ref rVpc
-      ApiRegion: !Select [2, !Split [".", !Ref CidrApiEndpoint]]
+      ApiRegion: !Select [2, !Split [".", !Ref pCidrApiEndpoint]]
 
 Outputs:
-  oEnvironmentName:
-    Description: The name of your new environment
-    Value: !Ref Environment
-
   oVpcId:
     Description: The ID of the Deployed VPC for your new environment
     Value: !Ref rVpc
@@ -591,18 +623,18 @@ Outputs:
     Description: AZ of Private Subnet 2
     Value: !GetAtt rPrivateSubnet2.AvailabilityZone
 
-  oInfraSubnet1:
+  orTGWAttachSubnet1:
     Description: Infrastructure Subnet 1
-    Value: !Ref TGWAttachSubnet1
+    Value: !Ref rTGWAttachSubnet1
 
-  oInfraSubnet1AZ:
+  orTGWAttachSubnet1AZ:
     Description: AZ of Infrastructure Subnet 1
-    Value: !GetAtt TGWAttachSubnet1.AvailabilityZone
+    Value: !GetAtt rTGWAttachSubnet1.AvailabilityZone
 
-  oInfraSubnet2:
+  orTGWAttachSubnet2:
     Description: Infrastructure Subnet 2
-    Value: !Ref TGWAttachSubnet2
+    Value: !Ref rTGWAttachSubnet2
 
-  oInfraSubnet2AZ:
+  orTGWAttachSubnet2AZ:
     Description: AZ of Infrastructure Subnet 2
-    Value: !GetAtt TGWAttachSubnet2.AvailabilityZone
+    Value: !GetAtt rTGWAttachSubnet2.AvailabilityZone

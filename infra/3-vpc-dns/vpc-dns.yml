@@ -1,0 +1,502 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  AWS CloudFormation Template to create VPC for Workloads and Subnets calling the API IPMGMT Solution  
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: API GW Endpoint
+        Parameters:
+          - pCidrApiEndpoint
+      - Label:
+          default: Project Configuration
+        Parameters:
+          - pProjectCode
+          - pRequestor
+          - pReason
+          - pRegion
+          - pProjectName
+      - Label:
+          default: Network Configuration
+        Parameters:
+          - pTransitGatewayId
+          - VpcCidrSize
+
+Parameters:
+  pCidrApiEndpoint:
+    Type: String
+    Default: https://2oqinnk253.execute-api.us-east-1.amazonaws.com/v0
+  VpcCidrSize:
+    Type: String
+    AllowedValues: ["21", "22", "23"]
+  pProjectCode:
+    Type: String
+  pRequestor:
+    Type: String
+  pReason:
+    Type: String
+  pProjectName:
+    Type: String
+  pRegion:
+    Type: String
+    Description: us-east-1
+    Default: us-east-1
+  pTransitGatewayId:
+    Description: "The Transit Gateway ID. Example: tgw-11122233"
+    Type: String
+    AllowedPattern: "tgw-[0-9a-zA-Z]{1,25}$"
+    Default: tgw-012a6c6cea71d4625
+
+Resources:
+  rVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !GetAtt rAllocateCidr.cidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${pProjectName}-VPC
+
+# Now that we have the VPC - we create the subnet layout for a workload account
+  #
+  #
+  # Example Allocation - 172.16.0.0/23
+  # 172.16.0.0/28 - infra1
+  # 172.16.0.16/28 - infra2
+  # 172.16.0.32/28 - infra3
+  # 172.16.0.48/28 -  unused
+  # 172.16.0.64/26 - unused
+  # 172.16.0.128/25 - private subnet 1
+  # 172.16.1.0/25 - private subnet 2
+  # 172.16.1.128/25 - private subnet 3
+  #
+  # The Subnets are automatically generated from the VPC CIDR with the following
+  # logic:
+  #       CidrBlock: !Select [ 0, !Cidr [!GetAtt NewVPC.CidrBlock, 1, 5 ]]
+  # !Select - Selects the Nth returned list. Starts at 0 for the '1st' in the list.
+  #
+  # !Cidr [<CIDR_Block>, <Num_of_Subnets>, <Host_Bits>]
+  # <CIDR_Block> - Typically the VPC CIDR block that you are selecting subnets from.
+  # <Num_of_Subnets> - return a list of this many subnets.
+  # <Host_Bits> - Use this as the hostbit mask for the subnets within <CIDR_Block>
+  #
+  # Since these are 'hostbits' they function different from the network bits.
+  # Simply subtract the value from 32 (IPv4) or 128 (IPv6) to determine the hostbit setting.
+  #
+  # Examples - /28 == (32-28) == 4 hostbits
+  #            /27 == (32-27) == 5 hostbits
+  #            /26 == (32-26) == 6 hostbits
+  #            /25 == (32-25) == 7 hostbits
+  #            /24 == (32-24) == 8 hostbits
+  # etc.
+  # This may require adjustment if the allocation strategy changes!
+  #
+
+  rTGWAttachSubnet1:
+      Type: AWS::EC2::Subnet
+      Properties:
+        CidrBlock: !Select [ 0, !Cidr [!GetAtt rVpc.CidrBlock, 1, 4 ]]
+        VpcId: !Ref rVpc
+        AvailabilityZone: !Select [0, !GetAZs '']
+        Tags:
+        - Key: Name
+          Value: !Sub ${pProjectName}-tgw-attach-az1
+
+  rTGWAttachSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: !Select [ 1, !Cidr [!GetAtt rVpc.CidrBlock, 2, 4 ]]
+      VpcId: !Ref rVpc
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+      - Key: Name
+        Value: !Sub ${pProjectName}-tgw-attach-az2
+
+  rPrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: !Select [ 1, !Cidr [!GetAtt rVpc.CidrBlock, 2, 7 ]]
+      VpcId: !Ref rVpc
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+      - Key: Name
+        Value: !Sub ${pProjectName}-priv-az1
+
+  rPrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: !Select [ 2, !Cidr [!GetAtt rVpc.CidrBlock, 3, 7 ]]
+      VpcId: !Ref rVpc
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+      - Key: Name
+        Value: !Sub ${pProjectName}-priv-az2
+
+# Add route-tables and route-entrys
+
+  rPrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref rVpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${pProjectName}-priv
+
+# Associate route tables to the subnets.
+#
+# Private Subnets
+#
+  rPrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref rPrivateSubnet1
+      RouteTableId: !Ref rPrivateRouteTable
+
+  rPrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref rPrivateSubnet2
+      RouteTableId: !Ref rPrivateRouteTable
+
+  rTGWAttachment:
+      Type: AWS::EC2::TransitGatewayAttachment
+      Properties: 
+        SubnetIds: 
+          - !Ref rTGWAttachSubnet1
+          - !Ref rTGWAttachSubnet2
+        TransitGatewayId: !Ref pTransitGatewayId
+        VpcId: !Ref rVpc
+        Tags:
+          - Key: Name
+            Value: !Sub ${pProjectName}-attachment
+
+  rTGWDefaultRoute:
+    DependsOn:
+      - rTGWAttachment
+    Type: AWS::EC2::Route
+    Properties: 
+      DestinationCidrBlock: 0.0.0.0/0
+      RouteTableId: !Ref rPrivateRouteTable
+      TransitGatewayId: !Ref pTransitGatewayId
+
+############ Lambda Function get available CIDR ############
+
+  rGetCidr:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import sys
+          import urllib
+          import urllib3
+          from botocore.auth import SigV4Auth
+          from botocore.awsrequest import AWSRequest
+          
+          http = urllib3.PoolManager()
+          
+          session = boto3.Session()
+          credentials = session.get_credentials()
+          creds = credentials.get_frozen_credentials()
+          
+          def signed_request(method, url, region, data=None, params=None, headers=None):
+              request = AWSRequest(method=method, url=url, data=data, params=params, headers=headers)
+              # "service_name" is generally "execute-api" for signing API Gateway requests
+              SigV4Auth(creds, "execute-api", region).add_auth(request) 
+              #return requests.request(method=method, url=url, headers=dict(request.headers), data=data)
+              response = http.request(method, url,
+                           headers=dict(request.headers),
+                           )
+                           #{'Content-Type': 'application/json'}
+              return response
+          
+          def lambda_handler(event, context):
+              print(event)
+              
+              AccountId = event['ResourceProperties']['AccountId']
+              prefix = event['ResourceProperties']['Prefix']
+              ProjectCode = event['ResourceProperties']['ProjectCode']
+              Requestor = event['ResourceProperties']['Requestor']
+              Reason = event['ResourceProperties']['Reason']
+              Region = event['ResourceProperties']['Region']
+              Env = event['ResourceProperties']['Env']
+              StackId = event['ResourceProperties']['StackId'].split('/')[-1]
+              CidrApiEndpoint = event['ResourceProperties']['CidrApiEndpoint'] \
+                  + '/lambda' \
+                  + '?AccountId=' + AccountId \
+                  + '&prefix=' + prefix \
+                  + '&ProjectCode=' + urllib.parse.quote(ProjectCode) \
+                  + '&Requestor=' + urllib.parse.quote(Requestor) \
+                  + '&Reason=' + urllib.parse.quote(Reason) \
+                  + '&Region=' + Region \
+                  + '&Env=' + Env \
+                  + '&StackId=' + StackId
+              Region = event['ResourceProperties']['ApiRegion']
+              DeleteEndpoint = event['ResourceProperties']['CidrApiEndpoint'] \
+                  + '/lambda' \
+                  + '?StackId=' + StackId
+              print(CidrApiEndpoint)
+              
+              import cfnresponse as cfn
+              rd = {}
+              if event['RequestType'] == 'Create':
+                  try:
+                      headers = {'Content-Type': 'application/x-amz-json-1.1'}
+                      response = signed_request('POST', CidrApiEndpoint, Region, data=None, params=None, headers=headers)
+                      if response.status != 200:
+                          rd['error'] = response.data.decode('utf-8')
+                          cfn.send(event, context, cfn.FAILED, rd, 'cidrAllocation')
+                      else:
+                          rd = json.loads(response.data.decode('utf-8'))
+                          cfn.send(event, context, cfn.SUCCESS, rd, 'cidrAllocation')
+                  except Exception as e:
+                      rd['error'] = str(e)
+                      cfn.send(event, context, cfn.FAILED, rd, 'cidrAllocation')
+              elif event['RequestType'] == 'Update':
+                  try:
+                      cfn.send(event, context, cfn.SUCCESS, rd, 'cidrAllocation')
+                  except Exception as e:
+                      rd['error'] = e
+                      cfn.send(event, context, cfn.FAILED, rd, 'cidrAllocation')
+              elif event['RequestType'] == 'Delete':
+                  try:
+                      headers = {'Content-Type': 'application/x-amz-json-1.1'}
+                      response = signed_request('DELETE', DeleteEndpoint, Region, data=None, params=None, headers=headers)
+                      cfn.send(event, context, cfn.SUCCESS, rd, 'cidrRemoval')
+                  except Exception as e:
+                      rd['error'] = e
+                      cfn.send(event, context, cfn.FAILED, rd, 'cidrRemoval')
+              else:
+                  cfn.send(event, context, cfn.FAILED, rd, 'cidrAllocation')
+              return
+      Description: Allocate Cidr addresses
+      Runtime: python3.7
+      Role: !GetAtt rLambdaExecutionRole.Arn
+      Timeout: 60
+      MemorySize: 256
+      Handler: index.lambda_handler
+
+  rLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonAPIGatewayInvokeFullAccess
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:*
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogGroups
+                Resource: !Sub arn:${AWS::Partition}:logs:*:*:*
+
+  rAllocateCidr:
+    Type: Custom::AllocateCidr
+    Properties:
+      ServiceToken: !GetAtt rGetCidr.Arn
+      Prefix: !Ref VpcCidrSize
+      CidrApiEndpoint: !Ref pCidrApiEndpoint
+      AccountId: !Ref AWS::AccountId
+      ProjectCode: !Ref pProjectCode
+      Requestor: !Ref pRequestor
+      Reason: !Ref pReason
+      Region: !Ref AWS::Region
+      Env: !Ref pRegion
+      ApiRegion: !Select [2, !Split [".", !Ref pCidrApiEndpoint]]
+      StackId: !Ref AWS::StackId
+
+############ Lambda Function update CIDR ############
+
+  rUpdateCidr:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import sys
+          import urllib
+          import urllib3
+          from botocore.auth import SigV4Auth
+          from botocore.awsrequest import AWSRequest
+          
+          http = urllib3.PoolManager()
+          
+          session = boto3.Session()
+          credentials = session.get_credentials()
+          creds = credentials.get_frozen_credentials()
+          
+          def signed_request(method, url, region, data=None, params=None, headers=None):
+              request = AWSRequest(method=method, url=url, data=data, params=params, headers=headers)
+              # "service_name" is generally "execute-api" for signing API Gateway requests
+              SigV4Auth(creds, "execute-api", region).add_auth(request)
+              #return requests.request(method=method, url=url, headers=dict(request.headers), data=data)
+              response = http.request(method, url,
+                           headers=dict(request.headers),
+                           )
+                           #{'Content-Type': 'application/json'}
+              print(response.data)
+              return response
+          
+          def lambda_handler(event, context):
+              print(event)
+              
+              Cidr = event['ResourceProperties']['Cidr']
+              VpcId = event['ResourceProperties']['VpcId']
+              Region = event['ResourceProperties']['ApiRegion']
+              
+              import cfnresponse as cfn
+              rd = {}
+              if event['RequestType'] == 'Create':
+                  try:
+                      CidrApiEndpoint = event['ResourceProperties']['CidrApiEndpoint'] \
+                          + '/lambda' \
+                          + '?Cidr=' + urllib.parse.quote(Cidr, safe='') \
+                          + '&VpcId=' + VpcId
+                      print(CidrApiEndpoint)
+                      headers = {'Content-Type': 'application/x-amz-json-1.1'}
+                      response = signed_request('PUT', CidrApiEndpoint, Region, data=None, params=None, headers=headers)
+                      print(response.status)
+                      if response.status != 200:
+                          rd['error'] = response.data.decode('utf-8')
+                          cfn.send(event, context, cfn.FAILED, rd, 'cidrVpcIdUpdate')
+                      else:
+                          rd['result'] = response.data.decode('utf-8')
+                          cfn.send(event, context, cfn.SUCCESS, rd, 'cidrVpcIdUpdate')
+                  except Exception as e:
+                      rd['error'] = str(e)
+                      cfn.send(event, context, cfn.FAILED, rd, 'cidrAllocation')
+              elif event['RequestType'] == 'Update':
+                  try:
+                      cfn.send(event, context, cfn.SUCCESS, rd, 'cidrAllocation')
+                  except Exception as e:
+                      rd['error'] = e
+                      cfn.send(event, context, cfn.FAILED, rd, 'cidrAllocation')
+              elif event['RequestType'] == 'Delete':
+                  try:
+                      CidrApiEndpoint = event['ResourceProperties']['CidrApiEndpoint'] \
+                          + '/lambda' \
+                          + '?Cidr=' + urllib.parse.quote(Cidr, safe='')
+                      headers = {'Content-Type': 'application/x-amz-json-1.1'}
+                      response = signed_request('DELETE', CidrApiEndpoint, Region, data=None, params=None, headers=headers)
+                      print(response.status)
+                      if response.status != 200:
+                          rd['error'] = response.data.decode('utf-8')
+                          cfn.send(event, context, cfn.FAILED, rd, 'cidrAllocation')
+                      else:
+                          rd['result'] = response.data.decode('utf-8')
+                          cfn.send(event, context, cfn.SUCCESS, rd, 'cidrRemoval')
+                  except Exception as e:
+                      rd['error'] = e
+                      cfn.send(event, context, cfn.FAILED, rd, 'cidrRemoval')
+              else:
+                  cfn.send(event, context, cfn.FAILED, rd, 'cidrAllocation')
+              return
+      Description: Allocate Cidr addresses
+      Runtime: python3.7
+      Role: !GetAtt rUpdateCidrLambdaExecutionRole.Arn
+      Timeout: 60
+      MemorySize: 256
+      Handler: index.lambda_handler
+
+  rUpdateCidrLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonAPIGatewayInvokeFullAccess
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:*
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogGroups
+                Resource: !Sub arn:${AWS::Partition}:logs:*:*:*
+
+  rUpdateCustomCidr:
+    Type: Custom::updateCidr
+    Properties:
+      ServiceToken: !GetAtt rUpdateCidr.Arn
+      CidrApiEndpoint: !Ref pCidrApiEndpoint
+      Cidr: !GetAtt rAllocateCidr.cidr
+      VpcId: !Ref rVpc
+      ApiRegion: !Select [2, !Split [".", !Ref pCidrApiEndpoint]]
+
+Outputs:
+  oVpcId:
+    Description: The ID of the Deployed VPC for your new environment
+    Value: !Ref rVpc
+
+  oVpcCidr:
+    Description: VPC CIDR Block
+    Value: !GetAtt rVpc.CidrBlock
+
+  oPrivateSubnet1:
+    Description: Private Subnet 1
+    Value: !Ref rPrivateSubnet1
+
+  oPrivateSubnet1AZ:
+    Description: AZ of Private Subnet 1
+    Value: !GetAtt rPrivateSubnet1.AvailabilityZone
+
+  oPrivateSubnet2:
+    Description: Private Subnet 2
+    Value: !Ref rPrivateSubnet2
+
+  oPrivateSubnet2AZ:
+    Description: AZ of Private Subnet 2
+    Value: !GetAtt rPrivateSubnet2.AvailabilityZone
+
+  oTGWAttachSubnet1:
+    Description: Infrastructure Subnet 1
+    Value: !Ref rTGWAttachSubnet1
+
+  oTGWAttachSubnet1AZ:
+    Description: AZ of Infrastructure Subnet 1
+    Value: !GetAtt rTGWAttachSubnet1.AvailabilityZone
+
+  oTGWAttachSubnet2:
+    Description: Infrastructure Subnet 2
+    Value: !Ref rTGWAttachSubnet2
+
+  oTGWAttachSubnet2AZ:
+    Description: AZ of Infrastructure Subnet 2
+    Value: !GetAtt rTGWAttachSubnet2.AvailabilityZone

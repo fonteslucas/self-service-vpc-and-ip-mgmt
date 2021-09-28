@@ -1,37 +1,54 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  AWS CloudFormation Template to create VPN and attach in TGW
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Customer Gateway Configuration
+        Parameters:
+          - pCustomerIP
+          - pASN
+      - Label:
+          default: Route Configuration
+        Parameters:
+          - pLocalCIDR
+          - pRouteTableID
+
 Parameters:
-  CustomerIP:
+  pCustomerIP:
     Type: String
     Description: Customer IP
     Default: 35.171.8.37
   
-  BgpAsn:
+  pASN:
     Type: Number
     Default: 65534
   
-  LocalCIDR:
+  pLocalCIDR:
     Type: String
     Default: 10.10.0.0/16
 
-  RouteTableID:
+  pRouteTableID:
     Type: String
 
 Resources:
-  CustomerGateway: 
-      Type: AWS::EC2::CustomerGateway
-      Properties: 
-          Type: ipsec.1
-          BgpAsn: !Ref BgpAsn
-          IpAddress: !Ref CustomerIP
+  rCustomerGateway: 
+    Type: AWS::EC2::CustomerGateway
+    Properties: 
+      Type: ipsec.1
+      BgpAsn: !Ref pASN
+      IpAddress: !Ref pCustomerIP
   
-  VPNConnection:
+  rVPNConnection:
     Type: AWS::EC2::VPNConnection
     Properties: 
-      CustomerGatewayId: !Ref CustomerGateway
+      CustomerGatewayId: !Ref rCustomerGateway
       TransitGatewayId: !ImportValue TransitGatewayId
       StaticRoutesOnly: True
       Type: ipsec.1
   
-  TgwLambdaExecutionRole:
+  rTgwLambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Sub "${AWS::StackName}-${AWS::Region}-tgw-lambda-role"
@@ -54,25 +71,25 @@ Resources:
                 Action:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
-                Resource: !GetAtt TransitGatewayAttachmentFunctionLogGroup.Arn
+                Resource: !GetAtt rTransitGatewayAttachmentFunctionLogGroup.Arn
               - Effect: Allow
                 Action:
                   - ec2:*
                 Resource: "*"
   
-  TransitGatewayAttachmentFunctionLogGroup:
+  rTransitGatewayAttachmentFunctionLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
         LogGroupName: !Sub /aws/lambda/${AWS::StackName}-tgw-attachment-id
         RetentionInDays: 1
 
-  TransitGatewayAttachmentIdFunction:
+  rTransitGatewayAttachmentIdFunction:
     Type: AWS::Lambda::Function
-    DependsOn: TransitGatewayAttachmentFunctionLogGroup
+    DependsOn: rTransitGatewayAttachmentFunctionLogGroup
     Properties:
       FunctionName: !Sub ${AWS::StackName}-tgw-attachmentfunction
       Handler: "index.handler"
-      Role: !GetAtt TgwLambdaExecutionRole.Arn
+      Role: !GetAtt rTgwLambdaExecutionRole.Arn
       Code:
         ZipFile: |
           import urllib3
@@ -138,17 +155,17 @@ Resources:
       Runtime: python3.7
       Timeout: 30
 
-  TransitGatewayAttachmentIdFinder:
+  rTransitGatewayAttachmentIdFinder:
     Type: "Custom::TransitGatewayAttachmentIdFinder"
     Version: "1.0"
     Properties:
-      ServiceToken: !GetAtt TransitGatewayAttachmentIdFunction.Arn
-      vpnID: !Ref VPNConnection
+      ServiceToken: !GetAtt rTransitGatewayAttachmentIdFunction.Arn
+      vpnID: !Ref rVPNConnection
   
-  MyVPNRoute:
+  rMyVPNRoute:
     Type: AWS::EC2::TransitGatewayRoute
     Properties: 
       Blackhole: false
-      DestinationCidrBlock: !Ref LocalCIDR
-      TransitGatewayAttachmentId: !GetAtt TransitGatewayAttachmentIdFinder.TransitGatewayAttachmentId
-      TransitGatewayRouteTableId: !Ref RouteTableID
+      DestinationCidrBlock: !Ref pLocalCIDR
+      TransitGatewayAttachmentId: !GetAtt rTransitGatewayAttachmentIdFinder.TransitGatewayAttachmentId
+      TransitGatewayRouteTableId: !Ref pRouteTableID

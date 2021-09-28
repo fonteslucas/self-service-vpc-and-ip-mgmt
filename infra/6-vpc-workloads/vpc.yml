@@ -1,19 +1,41 @@
 AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  AWS CloudFormation Template to create VPC for Workloads and Subnets calling the API IPMGMT Solution  
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: API GW Endpoint
+        Parameters:
+          - pCidrApiEndpoint
+      - Label:
+          default: Project Configuration
+        Parameters:
+          - pProjectCode
+          - pRequestor
+          - pReason
+          - pRegion
+      - Label:
+          default: Network Configuration
+        Parameters:
+          - pTransitGatewayId
 
 Parameters:
-  CidrApiEndpoint:
+  pCidrApiEndpoint:
     Type: String
-    Default: https://tg56d6i330.execute-api.us-east-1.amazonaws.com/v0
+    Default: https://2oqinnk253.execute-api.us-east-1.amazonaws.com/v0
   VpcCidrSize:
     Type: String
     AllowedValues: ["21", "22", "23"]
-  ProjectCode:
+  pProjectCode:
     Type: String
-  Requestor:
+  pRequestor:
     Type: String
-  Reason:
+  pReason:
     Type: String
-  Environment:
+  pProjectName:
+    Type: String
+  pRegion:
     Type: String
     Description: us-east-1
     Default: us-east-1
@@ -21,15 +43,22 @@ Parameters:
     Description: "The Transit Gateway ID. Example: tgw-11122233"
     Type: String
     AllowedPattern: "tgw-[0-9a-zA-Z]{1,25}$"
-    Default: tgw-02b05783422749109
+    Default: tgw-012a6c6cea71d4625
+  pRuleId:
+    Type: String
+    Description: Provide the resolver rule ID for rule-1
+    Default: rslvr-rr-1f170d2cfd904c648
 
 Resources:
   rVpc:
     Type: AWS::EC2::VPC
     Properties:
-      CidrBlock: !GetAtt AllocateCidr.cidr
+      CidrBlock: !GetAtt rAllocateCidr.cidr
       EnableDnsSupport: true
       EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${pProjectName}-VPC
 
 # Now that we have the VPC - we create the subnet layout for a workload account
   #
@@ -66,7 +95,7 @@ Resources:
   # This may require adjustment if the allocation strategy changes!
   #
 
-  TGWAttachSubnet1:
+  rTGWAttachSubnet1:
       Type: AWS::EC2::Subnet
       Properties:
         CidrBlock: !Select [ 0, !Cidr [!GetAtt rVpc.CidrBlock, 1, 4 ]]
@@ -74,9 +103,9 @@ Resources:
         AvailabilityZone: !Select [0, !GetAZs '']
         Tags:
         - Key: Name
-          Value: !Sub ${Environment}-tgw-attach-az1
+          Value: !Sub ${pProjectName}-tgw-attach-az1
 
-  TGWAttachSubnet2:
+  rTGWAttachSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
       CidrBlock: !Select [ 1, !Cidr [!GetAtt rVpc.CidrBlock, 2, 4 ]]
@@ -84,7 +113,7 @@ Resources:
       AvailabilityZone: !Select [1, !GetAZs '']
       Tags:
       - Key: Name
-        Value: !Sub ${Environment}-tgw-attach-az2
+        Value: !Sub ${pProjectName}-tgw-attach-az2
 
   rPrivateSubnet1:
     Type: AWS::EC2::Subnet
@@ -94,7 +123,7 @@ Resources:
       AvailabilityZone: !Select [0, !GetAZs '']
       Tags:
       - Key: Name
-        Value: !Sub ${Environment}-priv-az1
+        Value: !Sub ${pProjectName}-priv-az1
 
   rPrivateSubnet2:
     Type: AWS::EC2::Subnet
@@ -104,7 +133,7 @@ Resources:
       AvailabilityZone: !Select [1, !GetAZs '']
       Tags:
       - Key: Name
-        Value: !Sub ${Environment}-priv-az2
+        Value: !Sub ${pProjectName}-priv-az2
 
 # Add route-tables and route-entrys
 
@@ -114,7 +143,7 @@ Resources:
       VpcId: !Ref rVpc
       Tags:
         - Key: Name
-          Value: !Sub ${Environment}-priv
+          Value: !Sub ${pProjectName}-priv
 
 # Associate route tables to the subnets.
 #
@@ -136,13 +165,13 @@ Resources:
       Type: AWS::EC2::TransitGatewayAttachment
       Properties: 
         SubnetIds: 
-          - !Ref TGWAttachSubnet1
-          - !Ref TGWAttachSubnet2
+          - !Ref rTGWAttachSubnet1
+          - !Ref rTGWAttachSubnet2
         TransitGatewayId: !Ref pTransitGatewayId
         VpcId: !Ref rVpc
         Tags:
-          - Key: CreatedBy
-            Value: CloudFormation
+          - Key: Name
+            Value: !Sub ${pProjectName}-attachment
 
   rTGWDefaultRoute:
     DependsOn:
@@ -152,9 +181,16 @@ Resources:
       DestinationCidrBlock: 0.0.0.0/0
       RouteTableId: !Ref rPrivateRouteTable
       TransitGatewayId: !Ref pTransitGatewayId
+  
+  rRuleAssociation:
+    Type: AWS::Route53Resolver::ResolverRuleAssociation
+    Properties:
+      Name: !Sub ${pProjectName}-VPC
+      ResolverRuleId: !Ref pRuleId
+      VPCId: !Ref rVpc
 ############ Lambda Function get available CIDR ############
 
-  getCidr:
+  rGetCidr:
     Type: AWS::Lambda::Function
     Properties:
       Code:
@@ -245,12 +281,12 @@ Resources:
               return
       Description: Allocate Cidr addresses
       Runtime: python3.7
-      Role: !GetAtt LambdaExecutionRole.Arn
+      Role: !GetAtt rLambdaExecutionRole.Arn
       Timeout: 60
       MemorySize: 256
       Handler: index.lambda_handler
 
-  LambdaExecutionRole:
+  rLambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -282,24 +318,24 @@ Resources:
                   - logs:DescribeLogGroups
                 Resource: !Sub arn:${AWS::Partition}:logs:*:*:*
 
-  AllocateCidr:
+  rAllocateCidr:
     Type: Custom::AllocateCidr
     Properties:
-      ServiceToken: !GetAtt getCidr.Arn
+      ServiceToken: !GetAtt rGetCidr.Arn
       Prefix: !Ref VpcCidrSize
-      CidrApiEndpoint: !Ref CidrApiEndpoint
+      CidrApiEndpoint: !Ref pCidrApiEndpoint
       AccountId: !Ref AWS::AccountId
-      ProjectCode: !Ref ProjectCode
-      Requestor: !Ref Requestor
-      Reason: !Ref Reason
+      ProjectCode: !Ref pProjectCode
+      Requestor: !Ref pRequestor
+      Reason: !Ref pReason
       Region: !Ref AWS::Region
-      Env: !Ref Environment
-      ApiRegion: !Select [2, !Split [".", !Ref CidrApiEndpoint]]
+      Env: !Ref pRegion
+      ApiRegion: !Select [2, !Split [".", !Ref pCidrApiEndpoint]]
       StackId: !Ref AWS::StackId
 
 ############ Lambda Function update CIDR ############
 
-  updateCidr:
+  rUpdateCidr:
     Type: AWS::Lambda::Function
     Properties:
       Code:
@@ -386,12 +422,12 @@ Resources:
               return
       Description: Allocate Cidr addresses
       Runtime: python3.7
-      Role: !GetAtt UpdateCidrLambdaExecutionRole.Arn
+      Role: !GetAtt rUpdateCidrLambdaExecutionRole.Arn
       Timeout: 60
       MemorySize: 256
       Handler: index.lambda_handler
 
-  UpdateCidrLambdaExecutionRole:
+  rUpdateCidrLambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -423,20 +459,16 @@ Resources:
                   - logs:DescribeLogGroups
                 Resource: !Sub arn:${AWS::Partition}:logs:*:*:*
 
-  UpdateCidr:
+  rUpdateCustomCidr:
     Type: Custom::updateCidr
     Properties:
-      ServiceToken: !GetAtt updateCidr.Arn
-      CidrApiEndpoint: !Ref CidrApiEndpoint
-      Cidr: !GetAtt AllocateCidr.cidr
+      ServiceToken: !GetAtt rUpdateCidr.Arn
+      CidrApiEndpoint: !Ref pCidrApiEndpoint
+      Cidr: !GetAtt rAllocateCidr.cidr
       VpcId: !Ref rVpc
-      ApiRegion: !Select [2, !Split [".", !Ref CidrApiEndpoint]]
+      ApiRegion: !Select [2, !Split [".", !Ref pCidrApiEndpoint]]
 
 Outputs:
-  oEnvironmentName:
-    Description: The name of your new environment
-    Value: !Ref Environment
-
   oVpcId:
     Description: The ID of the Deployed VPC for your new environment
     Value: !Ref rVpc
@@ -461,18 +493,18 @@ Outputs:
     Description: AZ of Private Subnet 2
     Value: !GetAtt rPrivateSubnet2.AvailabilityZone
 
-  oInfraSubnet1:
+  oTGWAttachSubnet1:
     Description: Infrastructure Subnet 1
-    Value: !Ref TGWAttachSubnet1
+    Value: !Ref rTGWAttachSubnet1
 
-  oInfraSubnet1AZ:
+  oTGWAttachSubnet1AZ:
     Description: AZ of Infrastructure Subnet 1
-    Value: !GetAtt TGWAttachSubnet1.AvailabilityZone
+    Value: !GetAtt rTGWAttachSubnet1.AvailabilityZone
 
-  oInfraSubnet2:
+  oTGWAttachSubnet2:
     Description: Infrastructure Subnet 2
-    Value: !Ref TGWAttachSubnet2
+    Value: !Ref rTGWAttachSubnet2
 
-  oInfraSubnet2AZ:
+  oTGWAttachSubnet2AZ:
     Description: AZ of Infrastructure Subnet 2
-    Value: !GetAtt TGWAttachSubnet2.AvailabilityZone
+    Value: !GetAtt rTGWAttachSubnet2.AvailabilityZone

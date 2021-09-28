@@ -1,0 +1,22 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  AWS CloudFormation Template to associate the spoke VPC to the resolver rules
+
+Parameters:
+  ruleId:
+    Type: String
+    Description: Provide the resolver rule ID for rule-1
+  associationName:
+    Type: String
+    Description: name for the association
+  vpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Provide the VPC ID with which Route 53 Resolver rules are associated
+
+Resources:
+  ruleAssociation:
+    Type: AWS::Route53Resolver::ResolverRuleAssociation
+    Properties:
+      Name: !Ref associationName
+      ResolverRuleId: !Ref ruleId
+      VPCId: !Ref vpcId
