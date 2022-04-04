@@ -10,17 +10,16 @@ Metadata:
           - pVpcId
           - pPrivatesubnet1
           - pPrivatesubnet2
-          - pOnpremendpointcidr
       - Label:
           default: Resolver Rule Configuration
         Parameters:
           - pDomainFQDN
           - pDomainTargets
-#      - Label:
-#          default: Organization Configuration
-#        Parameters:
-#          - pOrgId
-#          - pMasterAccountId
+      - Label:
+          default: Organization Configuration
+        Parameters:
+          - pOrgId
+          - pMasterAccountId
 
 Parameters:
   pVpcId:
@@ -34,16 +33,12 @@ Parameters:
     Type: AWS::EC2::Subnet::Id
     Description: Chose the private subnet in AZ-2
     Default: subnet-0eb69a9570f4e3f2d
-  pOnpremendpointcidr: 
-    Type: String
-    Default: 10.10.0.0/16
-    Description: Provide the CIDRs of resources in on-prem that will be accessed from AWS via outbound endpoint.
   pRuleName:
     Type: String
     Description: resolver rule name
-#  pResourceShareName:
-#    Type: String
-#    Description: resource share name
+  pResourceShareName:
+    Type: String
+    Description: resource share name
   pDomainFQDN:
     Type: String
     Description: Provide FQDN for domain
@@ -52,12 +47,12 @@ Parameters:
     Type: List<String>
     Default: 10.10.1.34:53, 10.10.2.84:53
     Description: A comma separated list of IP:port targets (two targets) for example1.com domain resolution. Please change the default IPs as per your environment.
-#  pOrgId: 
-#    Type: String
-#    Description: Enter Organization Id (e.g. o-12345) if Organization sharing is enabled
-#  pMasterAccountId:
-#    Type: String
-#    Description: Account Id of master account in AWS Organization
+  pOrgId: 
+    Type: String
+    Description: Enter Organization Id (e.g. o-12345) if Organization sharing is enabled
+  pMasterAccountId:
+    Type: String
+    Description: Account Id of master account in AWS Organization
 
 Resources:
   rResolverSecurityGroup:
@@ -65,14 +60,8 @@ Resources:
     Properties:
       GroupDescription: Security group controlling Route53 Endpoint access
       SecurityGroupEgress:
-            - IpProtocol: tcp
-              FromPort: 53
-              ToPort: 53
-              CidrIp: !Ref pOnpremendpointcidr
-            - IpProtocol: udp
-              FromPort: 53
-              ToPort: 53
-              CidrIp: !Ref pOnpremendpointcidr
+            - IpProtocol: "-1"
+              CidrIp: 0.0.0.0/0
       VpcId: !Ref pVpcId
 
   rResolverEndpoint:
@@ -99,13 +88,13 @@ Resources:
         - Ip: !Select [ 0, !Split [ ":", !Select [ 1, !Ref pDomainTargets ] ] ]
           Port: !Select [ 1, !Split [ ":", !Select [ 1, !Ref pDomainTargets ] ] ]
 
-#  rResolverruleshare:
-#    Type: AWS::RAM::ResourceShare
-#    Properties:
-#      Name: !Ref pResourceShareName
-#      ResourceArns: !GetAtt rDomainRule.Arn
-#      Principals: 
-#       - !Sub 'arn:aws:organizations::${pMasterAccountId}:organization/${pOrgId}'
+  rResolverruleshare:
+    Type: AWS::RAM::ResourceShare
+    Properties:
+      Name: !Ref pResourceShareName
+      ResourceArns: !GetAtt rDomainRule.Arn
+      Principals: 
+       - !Sub 'arn:aws:organizations::${pMasterAccountId}:organization/${pOrgId}'
 
 Outputs:
   oResolverEndpointId:

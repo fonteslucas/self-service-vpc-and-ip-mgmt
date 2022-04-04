@@ -16,11 +16,11 @@ Metadata:
           default: Notification Configuration
         Parameters:
           - pFailureAlertEmail
-#      - Label:
-#          default: Organization Configuration
-#        Parameters:
-#          - pOrganizationsId
-#          - pRootOrganizationUnitId
+      - Label:
+          default: Organization Configuration
+        Parameters:
+          - pOrganizationsId
+          - pRootOrganizationUnitId
 
 Parameters:
   pDDBVPCSCIDRTableName:
@@ -31,14 +31,15 @@ Parameters:
     Default: ip-mgmt-supernets
   pS3CodeBucket:
     Type: String
+    Default: ipam-mgmt-lfg
   pFailureAlertEmail:
     Type: String
-#  pOrganizationsId:
-#    Type: String
-#    Default: o-kfsxtj8fwl
-#  pRootOrganizationUnitId:
-#    Type: String
-#    Default: r-4rhz
+  pOrganizationsId:
+    Type: String
+    Default: o-65r2o73zh8
+  pRootOrganizationUnitId:
+    Type: String
+    Default: r-ccrp
 
 Resources:
   rDynamoDBVPCSCIDRTable: 
@@ -132,9 +133,9 @@ Resources:
           Principal: "*"
           Action: execute-api:Invoke
           Resource: !Sub  arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*
-#          Condition:
-#            ForAnyValue:StringLike:
-#              aws:PrincipalOrgPaths: !Sub ${pOrganizationsId}/${pRootOrganizationUnitId}/*
+          Condition:
+            ForAnyValue:StringLike:
+              aws:PrincipalOrgPaths: !Sub ${pOrganizationsId}/${pRootOrganizationUnitId}/*
 
   rRequestValidator:
     Type: AWS::ApiGateway::RequestValidator

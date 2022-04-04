@@ -14,7 +14,7 @@ Metadata:
           - pProjectCode
           - pRequestor
           - pReason
-          - pRegion
+          - pEnv
       - Label:
           default: Network Configuration
         Parameters:
@@ -23,7 +23,7 @@ Metadata:
 Parameters:
   pCidrApiEndpoint:
     Type: String
-    Default: https://2oqinnk253.execute-api.us-east-1.amazonaws.com/v0
+    Default: https://2j8pufdewj.execute-api.us-east-1.amazonaws.com/v0
   VpcCidrSize:
     Type: String
     AllowedValues: ["21", "22", "23"]
@@ -35,15 +35,14 @@ Parameters:
     Type: String
   pProjectName:
     Type: String
-  pRegion:
+  pEnv:
     Type: String
-    Description: us-east-1
-    Default: us-east-1
+    Default: workloads
   pTransitGatewayId:
     Description: "The Transit Gateway ID. Example: tgw-11122233"
     Type: String
     AllowedPattern: "tgw-[0-9a-zA-Z]{1,25}$"
-    Default: tgw-012a6c6cea71d4625
+    Default: tgw-048dd3363714e586a
   pRuleId:
     Type: String
     Description: Provide the resolver rule ID for rule-1
@@ -308,8 +307,22 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
-                  - dynamodb:*
-                Resource: '*'
+                  - dynamodb:List*
+                  - dynamodb:DescribeReservedCapacity*
+                  - dynamodb:DescribeLimits
+                  - dynamodb:DescribeTimeToLive
+                  - dynamodb:BatchGet*
+                  - dynamodb:DescribeStream
+                  - dynamodb:DescribeTable
+                  - dynamodb:Get*
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:BatchWrite*
+                  - dynamodb:CreateTable
+                  - dynamodb:Delete*
+                  - dynamodb:Update*
+                  - dynamodb:PutItem
+                Resource: arn:aws:dynamodb:us-east-1:663782891240:table/ip-mgmt-supernets
               - Effect: Allow
                 Action:
                   - logs:CreateLogGroup
@@ -329,7 +342,7 @@ Resources:
       Requestor: !Ref pRequestor
       Reason: !Ref pReason
       Region: !Ref AWS::Region
-      Env: !Ref pRegion
+      Env: !Ref pEnv
       ApiRegion: !Select [2, !Split [".", !Ref pCidrApiEndpoint]]
       StackId: !Ref AWS::StackId
 
@@ -449,8 +462,22 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
-                  - dynamodb:*
-                Resource: '*'
+                  - dynamodb:List*
+                  - dynamodb:DescribeReservedCapacity*
+                  - dynamodb:DescribeLimits
+                  - dynamodb:DescribeTimeToLive
+                  - dynamodb:BatchGet*
+                  - dynamodb:DescribeStream
+                  - dynamodb:DescribeTable
+                  - dynamodb:Get*
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:BatchWrite*
+                  - dynamodb:CreateTable
+                  - dynamodb:Delete*
+                  - dynamodb:Update*
+                  - dynamodb:PutItem
+                Resource: arn:aws:dynamodb:us-east-1:663782891240:table/ip-mgmt-vpc-cidrs
               - Effect: Allow
                 Action:
                   - logs:CreateLogGroup

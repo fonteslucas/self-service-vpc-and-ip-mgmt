@@ -14,7 +14,7 @@ Metadata:
           - pProjectCode
           - pRequestor
           - pReason
-          - pRegion
+          - pEnv
       - Label:
           default: Network Configuration
         Parameters:
@@ -25,30 +25,29 @@ Metadata:
 Parameters:
   pCidrApiEndpoint:
     Type: String
-    Default: https://2oqinnk253.execute-api.us-east-1.amazonaws.com/v0
+    Default: https://2j8pufdewj.execute-api.us-east-1.amazonaws.com/v0
   pProjectCode:
     Type: String
   pRequestor:
     Type: String
   pReason:
     Type: String
-  pRegion:
+  pEnv:
     Type: String
-    Description: us-east-1
-    Default: us-east-1
+    Default: shared-services
   pRegionCIDR:
     Description: Region CIDR
     Type: String
-    Default: 172.19.0.0/16
+    Default: 10.0.0.0/16
   pTransitGatewayId:
     Description: "The Transit Gateway ID. Example: tgw-11122233"
     Type: String
     AllowedPattern: "tgw-[0-9a-zA-Z]{1,25}$"
-    Default: tgw-012a6c6cea71d4625
+    Default: tgw-048dd3363714e586a
   pRouteTableID:
     Description: RouteTable ID
     Type: String
-    Default: tgw-rtb-041beb0f089226561
+    Default: tgw-rtb-015c979ccf42111b6
 
 Resources:
   rVpc:
@@ -59,14 +58,14 @@ Resources:
       EnableDnsHostnames: true
       Tags:
         - Key: Name
-          Value: vpc-egress
+          Value: VPC-EGRESS
   
   rInternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
       Tags:
         - Key: Name
-          Value: igw-egress
+          Value: IGW-USE
 
   rAttachInternetGateway:
     Type: AWS::EC2::VPCGatewayAttachment
@@ -88,7 +87,7 @@ Resources:
       SubnetId: !Ref rPublicSubnet1
       Tags:
       - Key: Name
-        Value: NGW-1-Egress
+        Value: NAT-USE-1
   
   rEIP2:
     Type: AWS::EC2::EIP
@@ -104,7 +103,7 @@ Resources:
       SubnetId: !Ref rPublicSubnet2
       Tags:
       - Key: Name
-        Value: NGW-2-Egress
+        Value: NAT-USE-2
 
 # Now that we have the VPC - we create the subnet layout for a workload account
   #
@@ -141,69 +140,69 @@ Resources:
   # This may require adjustment if the allocation strategy changes!
   #
 
-  rTGWAttachSubnet1:
-      Type: AWS::EC2::Subnet
-      Properties:
-        CidrBlock: !Select [ 0, !Cidr [!GetAtt rVpc.CidrBlock, 1, 4 ]]
-        VpcId: !Ref rVpc
-        AvailabilityZone: !Select [0, !GetAZs '']
-        Tags:
-        - Key: Name
-          Value: egress-tgw-attach-az1
-
-  rTGWAttachSubnet2:
-    Type: AWS::EC2::Subnet
-    Properties:
-      CidrBlock: !Select [ 1, !Cidr [!GetAtt rVpc.CidrBlock, 2, 4 ]]
-      VpcId: !Ref rVpc
-      AvailabilityZone: !Select [1, !GetAZs '']
-      Tags:
-      - Key: Name
-        Value: egress-tgw-attach-az2
-
   rPrivateSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
-      CidrBlock: !Select [ 2, !Cidr [!GetAtt rVpc.CidrBlock, 3, 8 ]]
+      CidrBlock: !Select [ 0, !Cidr [!GetAtt rVpc.CidrBlock, 8, 8 ]]
       VpcId: !Ref rVpc
       AvailabilityZone: !Select [0, !GetAZs '']
       Tags:
       - Key: Name
-        Value: egress-priv-az1
+        Value: PRIV-SUBNET-AZ1
 
   rPrivateSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
-      CidrBlock: !Select [ 3, !Cidr [!GetAtt rVpc.CidrBlock, 4, 8 ]]
+      CidrBlock: !Select [ 1, !Cidr [!GetAtt rVpc.CidrBlock, 8, 8 ]]
       VpcId: !Ref rVpc
       AvailabilityZone: !Select [1, !GetAZs '']
       Tags:
       - Key: Name
-        Value: egress-priv-az2
+        Value: PRIV-SUBNET-AZ1
   
   rPublicSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
       MapPublicIpOnLaunch: true
-      CidrBlock: !Select [ 4, !Cidr [!GetAtt rVpc.CidrBlock, 5, 8 ]]
+      CidrBlock: !Select [ 2, !Cidr [!GetAtt rVpc.CidrBlock, 8, 8 ]]
       VpcId: !Ref rVpc
       AvailabilityZone: !Select [0, !GetAZs '']
       Tags:
       - Key: Name
-        Value: egress-public-az1
+        Value: PUBLIC-SUBNET-AZ1
 
   rPublicSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
       MapPublicIpOnLaunch: true
-      CidrBlock: !Select [ 5, !Cidr [!GetAtt rVpc.CidrBlock, 6, 8 ]]
+      CidrBlock: !Select [ 3, !Cidr [!GetAtt rVpc.CidrBlock, 8, 8 ]]
       VpcId: !Ref rVpc
       AvailabilityZone: !Select [1, !GetAZs '']
       Tags:
       - Key: Name
-        Value: egress-public-az2
+        Value: PUBLIC-SUBNET-AZ2
+  
+  rTGWAttachSubnet1:
+      Type: AWS::EC2::Subnet
+      Properties:
+        CidrBlock: !Select [ 64, !Cidr [!GetAtt rVpc.CidrBlock, 128, 4 ]]
+        VpcId: !Ref rVpc
+        AvailabilityZone: !Select [0, !GetAZs '']
+        Tags:
+        - Key: Name
+          Value: TGW-SUBNET-AZ1
 
-# Add route-tables and route-entrys
+  rTGWAttachSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: !Select [ 65, !Cidr [!GetAtt rVpc.CidrBlock, 128, 4 ]]
+      VpcId: !Ref rVpc
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+      - Key: Name
+        Value: TGW-SUBNET-AZ2
+
+ ########### Add route-tables and route-entrys ########### 
 
   rPrivateRouteTable:
     Type: AWS::EC2::RouteTable
@@ -211,7 +210,7 @@ Resources:
       VpcId: !Ref rVpc
       Tags:
         - Key: Name
-          Value: egress-priv-rtb
+          Value: RTB-PRIV
   
   rPublicRouteTable:
     DependsOn: rAttachInternetGateway
@@ -220,12 +219,30 @@ Resources:
       VpcId: !Ref rVpc
       Tags:
         - Key: Name
-          Value: egress-public-rtb
+          Value: RTB-PUBLIC
 
-# Associate route tables to the subnets.
-#
-# Private Subnets
-#
+ ########### Create VPCEndpoints ########### 
+
+  rS3Endpoint:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      RouteTableIds:
+      - !Ref rPrivateRouteTable
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      VpcId: !Ref rVpc
+  
+  rDynamoDBEndpoint:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      RouteTableIds:
+      - !Ref rPrivateRouteTable
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.dynamodb'
+      VpcId: !Ref rVpc
+
+ ########### Associate route tables to the subnets.########### 
+
+ ########### Private Subnets ########### 
+
   rPrivateSubnet1RouteTableAssociation:
     DependsOn: rAttachInternetGateway
     Type: AWS::EC2::SubnetRouteTableAssociation
@@ -269,7 +286,7 @@ Resources:
       RouteTableId: !Ref rPublicRouteTable
   
   rTGWAttachment:
-    DependsOn: rAttachInternetGateway
+    DependsOn: rPublicSubnet2RouteTableAssociation
     Type: AWS::EC2::TransitGatewayAttachment
     Properties: 
       SubnetIds: 
@@ -279,7 +296,7 @@ Resources:
       VpcId: !Ref rVpc
       Tags:
       - Key: Name
-        Value: egress-tgw-attachent
+        Value: TGWA-EGRESS-VPC
   
   rTGWNetworkAccountRoute:
     DependsOn:
@@ -438,8 +455,22 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
-                  - dynamodb:*
-                Resource: '*'
+                  - dynamodb:List*
+                  - dynamodb:DescribeReservedCapacity*
+                  - dynamodb:DescribeLimits
+                  - dynamodb:DescribeTimeToLive
+                  - dynamodb:BatchGet*
+                  - dynamodb:DescribeStream
+                  - dynamodb:DescribeTable
+                  - dynamodb:Get*
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:BatchWrite*
+                  - dynamodb:CreateTable
+                  - dynamodb:Delete*
+                  - dynamodb:Update*
+                  - dynamodb:PutItem
+                Resource: arn:aws:dynamodb:us-east-1:663782891240:table/ip-mgmt-supernets
               - Effect: Allow
                 Action:
                   - logs:CreateLogGroup
@@ -459,7 +490,7 @@ Resources:
       Requestor: !Ref pRequestor
       Reason: !Ref pReason
       Region: !Ref AWS::Region
-      Env: !Ref pRegion
+      Env: !Ref pEnv
       ApiRegion: !Select [2, !Split [".", !Ref pCidrApiEndpoint]]
       StackId: !Ref AWS::StackId
 
@@ -579,8 +610,22 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
-                  - dynamodb:*
-                Resource: '*'
+                  - dynamodb:List*
+                  - dynamodb:DescribeReservedCapacity*
+                  - dynamodb:DescribeLimits
+                  - dynamodb:DescribeTimeToLive
+                  - dynamodb:BatchGet*
+                  - dynamodb:DescribeStream
+                  - dynamodb:DescribeTable
+                  - dynamodb:Get*
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:BatchWrite*
+                  - dynamodb:CreateTable
+                  - dynamodb:Delete*
+                  - dynamodb:Update*
+                  - dynamodb:PutItem
+                Resource: arn:aws:dynamodb:us-east-1:663782891240:table/ip-mgmt-vpc-cidrs
               - Effect: Allow
                 Action:
                   - logs:CreateLogGroup

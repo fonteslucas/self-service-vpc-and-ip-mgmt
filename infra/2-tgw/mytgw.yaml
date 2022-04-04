@@ -10,27 +10,31 @@ Metadata:
         Parameters:
           - pASNTGW
           - pCustomerName
-#      - Label:
-#          default: Organization Configuration
-#        Parameters:
-#          - pOrgId
-#          - pMasterAccountId
+      - Label:
+          default: Organization Configuration
+        Parameters:
+          - pOrgId
+          - pMasterAccountId
 
 Parameters:
-#  pOrgId: 
-#    Type: String
-#    Description: Enter Organization Id (e.g. o-12345) if Organization sharing is enabled
-#  pMasterAccountId:
-#    Type: String
-#    Description: Account Id of master account in AWS Organization
+  pOrgId: 
+    Type: String
+    Description: Enter Organization Id (e.g. o-12345) if Organization sharing is enabled
+    Default: o-65r2o73zh8
+  pMasterAccountId:
+    Type: String
+    Description: Account Id of master account in AWS Organization
+    Default: 822980120791
   pASNTGW:
     Type: Number
     Default: 65000
     Description: ASN of Transit Gateway
-#  pTGWShareName:
-#    Type: String
+  pTGWShareName:
+    Type: String
+    Default: TGW-USE1
   pCustomerName:
     Type: String
+    Default: Study
 
 
 Resources:
@@ -46,15 +50,15 @@ Resources:
       - Key: Name
         Value: !Ref pCustomerName
   
-#  rTGWShare:
-#    Type: "AWS::RAM::ResourceShare"
-#    Properties:
-#      AllowExternalPrincipals: true
-#      Name: !Ref pTGWShareName
-#      Principals: 
-#        - !Sub 'arn:aws:organizations::${pMasterAccountId}:organization/${pOrgId}'
-#      ResourceArns: 
-#        - !Ref rTransitGateway
+  rTGWShare:
+    Type: "AWS::RAM::ResourceShare"
+    Properties:
+      AllowExternalPrincipals: true
+      Name: !Ref pTGWShareName
+      Principals: 
+        - !Sub 'arn:aws:organizations::${pMasterAccountId}:organization/${pOrgId}'
+      ResourceArns: 
+        - !Sub 'arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:transit-gateway/${rTransitGateway}'
 
 Outputs:
   oTransitGateway:
